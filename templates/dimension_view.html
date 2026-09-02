@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Tuzi - Live2D Dimension Portal</title>
+
+    <!-- 1. Cubism 4 Core SDK -->
+    <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+    <!-- 2. PixiJS v6 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/6.5.8/browser/pixi.min.js"></script>
+    <!-- 3. Pixi Live2D Display Cubism 4 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        user-select: none;
+      }
+
+      body {
+        background-color: #000000;
+        color: #ffffff;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      #top-bar {
+        padding: 18px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(
+          180deg,
+          rgba(10, 10, 10, 0.85) 0%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        z-index: 10;
+      }
+
+      .device-tag {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        padding: 6px 14px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: #0a0a0a;
+      }
+      .tag-active {
+        border-color: #ec4899;
+        color: #ec4899;
+        box-shadow: 0 0 12px rgba(236, 72, 153, 0.4);
+      }
+      .tag-inactive {
+        border-color: #333333;
+        color: #666666;
+      }
+
+      #stage-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      #live2d-container {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: none;
+        justify-content: center;
+        align-items: center;
+      }
+      #live2d-canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+
+      #portal-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        z-index: 5;
+      }
+      .void-rift {
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        border: 2px dashed #333;
+        animation: rotateVoid 14s linear infinite;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+      @keyframes rotateVoid {
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      #subtitles {
+        position: absolute;
+        bottom: 20px;
+        max-width: 85%;
+        padding: 10px 20px;
+        font-size: 15px;
+        line-height: 1.4;
+        text-align: center;
+        color: #f3f4f6;
+        background: rgba(10, 10, 10, 0.85);
+        backdrop-filter: blur(8px);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 8;
+      }
+
+      #bottom-bar {
+        padding: 20px 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 15px;
+        background: linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.95) 0%,
+          rgba(0, 0, 0, 0) 100%
+        );
+        z-index: 10;
+      }
+
+      .action-btn {
+        color: #ffffff;
+        border: 1px solid #262626;
+        padding: 14px 28px;
+        border-radius: 30px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .action-btn:active {
+        transform: scale(0.96);
+      }
+
+      .btn-mic-on {
+        background: #10b981;
+        border-color: #059669;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+      }
+      .btn-mic-on.speaking-detect {
+        background: #ef4444;
+        border-color: #dc2626;
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.6);
+        animation: micPulse 1s infinite alternate;
+      }
+      @keyframes micPulse {
+        0% {
+          transform: scale(1);
+        }
+        100% {
+          transform: scale(1.05);
+        }
+      }
+
+      .btn-mic-off {
+        background: #1f2937;
+        border-color: #374151;
+        color: #9ca3af;
+      }
+
+      .btn-teleport {
+        background: #1e1b4b;
+        border: 1px solid #4338ca;
+        color: #c7d2fe;
+        box-shadow: 0 0 20px rgba(67, 56, 202, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="top-bar">
+      <span
+        style="
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 2px;
+          color: #666;
+        "
+        >TUZI // LIVE2D DIMENSION</span
+      >
+      <span id="device-indicator" class="device-tag">CONNECTING...</span>
+    </div>
+
+    <div id="stage-area">
+      <div id="live2d-container">
+        <canvas id="live2d-canvas"></canvas>
+      </div>
+
+      <div id="portal-placeholder">
+        <div class="void-rift">
+          <span style="font-size: 32px; opacity: 0.3">✦</span>
+        </div>
+        <p id="portal-text" style="color: #666; font-size: 14px">
+          Menyinkronkan Dimensi Tuzi...
+        </p>
+      </div>
+
+      <div id="subtitles">Memuat Live2D Model Tuzi...</div>
+    </div>
+
+    <div id="bottom-bar">
+      <button
+        id="mic-toggle-btn"
+        class="action-btn btn-mic-off"
+        onclick="toggleMicMute()"
+        style="display: none"
+      >
+        🔇 Mic: OFF (Muted)
+      </button>
+      <button
+        id="teleport-btn"
+        class="action-btn btn-teleport"
+        onclick="triggerTeleport()"
+        style="display: none"
+      >
+        🌀 Pindahkan Tuzi ke Sini
+      </button>
+    </div>
+
+    <audio
+      id="voicevox-player"
+      style="display: none"
+      crossorigin="anonymous"
+    ></audio>
+
+    <script>
+      const urlParams = new URLSearchParams(window.location.search);
+      const myDeviceId = (urlParams.get("device") || "pc").toLowerCase();
+
+      const indicator = document.getElementById("device-indicator");
+      indicator.innerText = "DEVICE: " + myDeviceId.toUpperCase();
+
+      let ws;
+      let isCurrentActive = false;
+      let isMicMuted = true;
+      let recognition;
+      let isSpeechActive = false;
+
+      let pixiApp;
+      let currentModel = null;
+      let audioContext;
+      let analyser;
+      let audioSource;
+
+      // =====================================================================
+      // LIVE2D INITIALIZATION (AUTO-SWITCH MODEL PATH DOWNSCALED)
+      // =====================================================================
+      async function initLive2D() {
+        const canvas = document.getElementById("live2d-canvas");
+
+        try {
+          if (PIXI.live2d && PIXI.live2d.config && PIXI.live2d.config.cubism4) {
+            PIXI.live2d.config.cubism4.maskTextureSize = 512;
+          }
+
+          PIXI.live2d.Live2DModel.registerTicker(PIXI.Ticker);
+
+          pixiApp = new PIXI.Application({
+            view: canvas,
+            autoStart: true,
+            resizeTo: window,
+            transparent: true,
+            backgroundAlpha: 0,
+            antialias: false,
+            autoDensity: false,
+            resolution: 1,
+            powerPreference: "high-performance",
+          });
+
+          // Deteksi Tablet vs PC untuk memilih tekstur yang cocok
+          const isMobile =
+            myDeviceId === "tablet" ||
+            /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+          const modelPath = isMobile
+            ? "/Assets/model/tuzi_mian_mobile.model3.json"
+            : "/Assets/model/tuzi_mian.model3.json";
+
+          console.log("[Live2D] Memuat target model:", modelPath);
+
+          currentModel = await PIXI.live2d.Live2DModel.from(modelPath, {
+            autoInteract: true,
+            idleMotionGroup: "Idle",
+          });
+
+          pixiApp.stage.addChild(currentModel);
+
+          resizeLive2DModel();
+          window.addEventListener("resize", resizeLive2DModel);
+
+          document.getElementById("subtitles").innerText =
+            "Tuzi aktif di perangkat ini ✨";
+
+          currentModel.interactive = true;
+          currentModel.on("pointertap", () => {
+            try {
+              currentModel.motion("tap_body");
+            } catch (e) {}
+          });
+
+          setupNaturalPoseAndMotion(currentModel);
+        } catch (err) {
+          console.error("Live2D Load Error:", err);
+          document.getElementById("subtitles").innerText =
+            "Error memuat model: " + err.message;
+        }
+      }
+
+      // =====================================================================
+      // WAIST-UP PORTRAIT FRAMING (PAS DI TENGAH TANPA PERLU ZOOM)
+      // =====================================================================
+      function resizeLive2DModel() {
+        if (!currentModel || !pixiApp) return;
+        const screenW = pixiApp.renderer.width;
+        const screenH = pixiApp.renderer.height;
+        const isPortrait = screenH > screenW;
+
+        const targetHeightRatio = isPortrait ? 1.3 : 1.05;
+        const targetScale =
+          (screenH * targetHeightRatio) / currentModel.internalModel.height;
+
+        currentModel.scale.set(targetScale);
+        currentModel.x = (screenW - currentModel.width) / 2;
+        currentModel.y = isPortrait ? screenH * 0.08 : screenH * 0.03;
+      }
+
+      function setupNaturalPoseAndMotion(model) {
+        try {
+          if (model.internalModel.eyeBlink) {
+            model.internalModel.eyeBlink.enabled = true;
+          }
+          model.motion("Idle");
+        } catch (e) {}
+
+        let breathTime = 0;
+        pixiApp.ticker.add((delta) => {
+          breathTime += delta * 0.035;
+          const breathVal = (Math.sin(breathTime) + 1) / 2;
+
+          try {
+            const core = model.internalModel.coreModel;
+            if (core.setParameterValueById) {
+              core.setParameterValueById("ParamBreath", breathVal);
+            } else if (core.setParamFloat) {
+              core.setParamFloat("PARAM_BREATH", breathVal);
+            }
+          } catch (e) {}
+        });
+      }
+
+      // =====================================================================
+      // LIP-SYNC AUDIO MULUT
+      // =====================================================================
+      function setupLipSync() {
+        const player = document.getElementById("voicevox-player");
+        if (audioContext) return;
+
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+
+        audioSource = audioContext.createMediaElementSource(player);
+        audioSource.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        function updateMouth() {
+          if (currentModel && !player.paused) {
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const avg = sum / dataArray.length;
+            const mouthOpen = Math.min(1.0, avg / 50);
+
+            try {
+              const core = currentModel.internalModel.coreModel;
+              if (core.setParameterValueById) {
+                core.setParameterValueById("ParamMouthOpenY", mouthOpen);
+              } else if (core.setParamFloat) {
+                core.setParamFloat("PARAM_MOUTH_OPEN_Y", mouthOpen);
+              }
+            } catch (e) {}
+          }
+          requestAnimationFrame(updateMouth);
+        }
+        updateMouth();
+      }
+
+      // =====================================================================
+      // WEBSOCKET STATE & TELEPORTASI
+      // =====================================================================
+      function initWebSocket() {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${location.host}/ws/${myDeviceId}`);
+
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "STATE_UPDATE") {
+            isCurrentActive = data.is_current_active;
+            renderDimensionState(data.active_device);
+          }
+
+          if (data.type === "BOT_REPLY" && isCurrentActive) {
+            document.getElementById("subtitles").innerText = data.text;
+            if (data.audio) {
+              playVoicevoxAudio(data.audio);
+            }
+          }
+        };
+
+        ws.onclose = () => {
+          setTimeout(initWebSocket, 2000);
+        };
+      }
+
+      function renderDimensionState(activeDeviceId) {
+        const live2dBox = document.getElementById("live2d-container");
+        const portalPlaceholder = document.getElementById("portal-placeholder");
+        const portalText = document.getElementById("portal-text");
+        const micBtn = document.getElementById("mic-toggle-btn");
+        const teleportBtn = document.getElementById("teleport-btn");
+        const subtitleBox = document.getElementById("subtitles");
+
+        if (isCurrentActive) {
+          indicator.className = "device-tag tag-active";
+          live2dBox.style.display = "flex";
+          portalPlaceholder.style.display = "none";
+          micBtn.style.display = "flex";
+          teleportBtn.style.display = "none";
+          subtitleBox.style.display = "block";
+          subtitleBox.innerText = "Tuzi aktif di perangkat ini ✨";
+          if (pixiApp) pixiApp.start();
+          resizeLive2DModel();
+        } else {
+          indicator.className = "device-tag tag-inactive";
+          live2dBox.style.display = "none";
+          portalPlaceholder.style.display = "flex";
+          micBtn.style.display = "none";
+          teleportBtn.style.display = "flex";
+          subtitleBox.style.display = "none";
+          teleportBtn.innerText = `🌀 Pindahkan Tuzi ke ${myDeviceId.toUpperCase()}`;
+          portalText.innerText = `Tuzi sedang aktif di perangkat: ${activeDeviceId.toUpperCase()}`;
+
+          stopVoicevoxAudio();
+          if (!isMicMuted) toggleMicMute();
+          if (pixiApp) pixiApp.stop();
+        }
+      }
+
+      function triggerTeleport() {
+        ws.send(
+          JSON.stringify({
+            type: "TELEPORT_COMMAND",
+            target: myDeviceId,
+          }),
+        );
+      }
+
+      // =====================================================================
+      // KONTROL MIKROFON & AUDIO
+      // =====================================================================
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = "id-ID";
+
+        recognition.onresult = (e) => {
+          const transcript =
+            e.results[e.results.length - 1][0].transcript.trim();
+          if (transcript && isCurrentActive && !isMicMuted) {
+            document.getElementById("subtitles").innerText =
+              `Kamu: "${transcript}"`;
+            ws.send(
+              JSON.stringify({
+                type: "USER_SPEECH",
+                text: transcript,
+              }),
+            );
+          }
+        };
+
+        recognition.onstart = () => {
+          isSpeechActive = true;
+          document
+            .getElementById("mic-toggle-btn")
+            .classList.add("speaking-detect");
+        };
+
+        recognition.onend = () => {
+          isSpeechActive = false;
+          document
+            .getElementById("mic-toggle-btn")
+            .classList.remove("speaking-detect");
+          if (!isMicMuted && isCurrentActive) {
+            try {
+              recognition.start();
+            } catch (e) {}
+          }
+        };
+      }
+
+      function toggleMicMute() {
+        if (!isCurrentActive) return;
+        const micBtn = document.getElementById("mic-toggle-btn");
+
+        if (audioContext && audioContext.state === "suspended") {
+          audioContext.resume();
+        }
+
+        if (isMicMuted) {
+          isMicMuted = false;
+          micBtn.className = "action-btn btn-mic-on";
+          micBtn.innerHTML = "🎙️ Mic: AKTIF (Mendengarkan)";
+          if (recognition && !isSpeechActive) {
+            try {
+              recognition.start();
+            } catch (e) {}
+          }
+        } else {
+          isMicMuted = true;
+          micBtn.className = "action-btn btn-mic-off";
+          micBtn.innerHTML = "🔇 Mic: OFF (Muted)";
+          if (recognition && isSpeechActive) {
+            recognition.stop();
+          }
+        }
+      }
+
+      function playVoicevoxAudio(b64Data) {
+        setupLipSync();
+        if (audioContext && audioContext.state === "suspended") {
+          audioContext.resume();
+        }
+
+        const player = document.getElementById("voicevox-player");
+        player.src = "data:audio/wav;base64," + b64Data;
+        player.play();
+      }
+
+      function stopVoicevoxAudio() {
+        const player = document.getElementById("voicevox-player");
+        player.pause();
+        player.currentTime = 0;
+      }
+
+      window.addEventListener("DOMContentLoaded", async () => {
+        await initLive2D();
+        initWebSocket();
+      });
+    </script>
+  </body>
+</html>

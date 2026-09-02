@@ -1,0 +1,7 @@
+openai>=1.0.0
+edge-tts
+pyvts
+sounddevice
+numpy
+pydub
+websockets
