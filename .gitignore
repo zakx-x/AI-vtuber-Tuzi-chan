@@ -5,6 +5,11 @@
 /test_input.wav
 /test_raw.wav
 /test_zeta.wav
+Assets/
+assets/
+Assets/model/
+*.moc3
+*.model3.json
 /venv
 /vts_token.txt
 /__pycache__

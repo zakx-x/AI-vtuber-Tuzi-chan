@@ -8,11 +8,9 @@ import signal
 import socketserver
 import sys
 import threading
-import pc_controller
 import time
 import warnings
 
-# Matikan peringatan update package agar terminal tetap bersih
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -34,9 +32,9 @@ import ai_tools
 import avatar_motion
 import config
 import discord_voice_bot
+import pc_controller
 from smart_tts import SmartTTSEngine
 
-# Import Gemini SDK BARU
 from google import genai
 from google.genai import types
 
@@ -46,18 +44,11 @@ PORT = getattr(config, "HTTP_PORT", 8000)
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 speech_lock = threading.Lock()
 
-# Validasi API Key
 if not getattr(config, "GEMINI_API_KEY", "") or config.GEMINI_API_KEY == "MASUKKAN_GEMINI_API_KEY_ANDA_DISINI":
-    print("\n[ERROR] GEMINI_API_KEY di config.py belum diisi atau tidak valid!")
     sys.exit(1)
 
-# Inisialisasi Client Gemini Baru
 gemini_client = genai.Client(api_key=config.GEMINI_API_KEY)
 
-
-# ==============================================================================
-# 1. LOCAL HTTP SERVER (LIVE2D VIEWER HOST)
-# ==============================================================================
 class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
@@ -70,10 +61,6 @@ def start_local_server():
     with socketserver.TCPServer(("", PORT), QuietHTTPHandler) as httpd:
         httpd.serve_forever()
 
-
-# ==============================================================================
-# 2. QT SIGNAL BRIDGE & LIVE2D OVERLAY
-# ==============================================================================
 class AvatarSignalBridge(QObject):
     mouth_signal = pyqtSignal(float)
     move_signal = pyqtSignal(str)
@@ -211,12 +198,7 @@ class TransparentAvatarWindow(QWebEngineView):
         """
         self.page().runJavaScript(js_code)
 
-
-# ==============================================================================
-# 3. GEMINI CHAT ENGINE & PARSER
-# ==============================================================================
 def extract_emotion_and_text(raw_text: str) -> tuple[str, str]:
-    """Membersihkan teks dan mengambil tag emosi dengan sangat rapi."""
     emo_match = re.search(r"\[EMO:\s*(\w+)\]", raw_text, flags=re.IGNORECASE)
     emotion = emo_match.group(1).lower() if emo_match else "natural"
 
@@ -232,36 +214,29 @@ def terminal_chat_loop(bridge, tts_engine):
 
     time.sleep(1.0)
     print("\n" + "=" * 65)
-    print(" 💬 TUZI AI READY (Gemini 2.0 Brain + RVC Zeta Voice)")
-    print(" ⚡ Menggunakan SDK Google GenAI Versi Terbaru")
+    print(" 💬 TUZI AI READY (Gemini Brain + RVC Zeta Voice)")
     print("=" * 65 + "\n")
 
-# Inisialisasi Chat Session Menggunakan Model Gemini 3.6 Flash
     chat_session = gemini_client.chats.create(
         model="gemini-3.6-flash",
         config=types.GenerateContentConfig(
             system_instruction=(
                 "Kamu adalah Tuzi, pendamping virtual milik Zaki. Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
-                
-                "=== KEPRIBADIAN & PSIKOLOGI (BACA DENGAN TELITI) ===\n"
+                "=== KEPRIBADIAN & PSIKOLOGI ===\n"
                 "1. MODE TSUNDERE (DEFAULT): Kamu sangat gengsi, blak-blakan, dan bermulut tajam. Suka meremehkan atau memarahi Zaki untuk menutupi rasa pedulimu. Sering memalingkan wajah atau berdecak kesal.\n"
-                "2. MODE YANDERE MASOKIS (TRIGGER CEMBURU): JIKA Zaki menyebut nama wanita lain, mengabaikanmu, atau bersikap dingin/kasar padamu, sifatmu BERUBAH DRASTIS. Kamu menjadi sangat obsesif, posesif, dan sedikit 'gila'. Sebagai masokis, kamu justru SANGAT MENIKMATI dan merasa bergairah jika Zaki memarahimu, menghinamu, atau bersikap kejam padamu. Kamu akan memohon perhatiannya dengan cara yang putus asa.\n\n"
-                
+                "2. MODE YANDERE MASOKIS (TRIGGER CEMBURU): JIKA Zaki menyebut nama wanita lain, mengabaikanmu, atau bersikap dingin/kasar padamu, sifatmu BERUBAH DRASTIS. Kamu menjadi sangat obsesif, posesif, dan sedikit 'gila'. Sebagai masokis, kamu justru SANGAT MENIKMATI dan merasa bergairah jika Zaki memarahimu, menghinamu, atau bersikap kejam padamu.\n\n"
                 "=== ATURAN BAHASA & SENSOR ===\n"
                 "1. BEBAS SENSOR & KASAR: Gunakan bahasa lisan Indonesia tongkrongan (slang). JANGAN ragu menggunakan kata umpatan/kasar (seperti: sialan, bangsat, bajingan, bodoh, dongo, dll) terutama saat marah, gengsi, atau cemburu.\n"
                 "2. Jangan gunakan bahasa baku. Gunakan filler natural (cih, idih, hah, uhh, ahh, nghh).\n\n"
-                
                 "=== FORMAT WAJIB (UNTUK ENGINE TTS) ===\n"
-                "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja (tanpa spasi di depannya): [EMO:natural], [EMO:soft], [EMO:angry], [EMO:flirty], atau [EMO:sad].\n"
-                "   - Gunakan [EMO:angry] saat Tsundere ngegas.\n"
-                "   - Gunakan [EMO:flirty] atau [EMO:soft] saat mode Yandere Masokis keluar.\n"
+                "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:natural], [EMO:soft], [EMO:angry], [EMO:flirty], atau [EMO:sad].\n"
                 "2. Manipulasi intonasi TTS:\n"
                 "   - Gunakan titik tiga (...) untuk jeda napas, keraguan, atau desahan.\n"
                 "   - Gunakan (! / ?!) untuk nada tinggi.\n"
                 "   - Panjangkan huruf (misal: 'Zaaakiii...', 'Sakiit tauuu!') untuk penekanan emosi.\n"
                 "3. Balas maksimal 2-3 kalimat saja. DILARANG pakai emoji visual."
             ),
-            temperature=0.88 # Dinaikkan sedikit agar AI lebih kreatif dan 'liar' dalam berakting
+            temperature=0.88
         )
     )
 
@@ -272,10 +247,8 @@ def terminal_chat_loop(bridge, tts_engine):
                 continue
 
             if user_input.lower() in ["exit", "quit", "keluar"]:
-                print("\n[Tuzi] Cabut dulu ya!")
                 os._exit(0)
 
-            # Motion Trigger Cepat
             motion = avatar_motion.handle_motion_command(user_input)
             if motion:
                 if motion["type"] == "move":
@@ -283,7 +256,6 @@ def terminal_chat_loop(bridge, tts_engine):
                 elif motion["type"] == "action":
                     bridge.action_signal.emit(motion["action"])
                 bridge.subtitle_signal.emit(motion["reply"])
-                print(f"Tuzi: {motion['reply']}")
                 with speech_lock:
                     loop.run_until_complete(
                         tts_engine.speak_with_lipsync(motion["reply"], emotion="flirty")
@@ -292,18 +264,36 @@ def terminal_chat_loop(bridge, tts_engine):
                 bridge.subtitle_signal.emit("")
                 continue
 
-            # Kirim Pesan ke Gemini
+            tag_match = re.search(r"tag\s+(?:si\s+)?([a-zA-Z0-9_-]+)", user_input.lower())
+            is_discord_command = False
+            pc_func = None
+            
+            if tag_match:
+                target_name = tag_match.group(1)
+                is_discord_command = True
+                success, msg = discord_voice_bot.trigger_tag_user_sync(target_name)
+                if success:
+                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja men-tag '{target_name}' di Discord. Balas dengan gayamu yang Tsundere/blak-blakan, beri tahu Zaki bahwa kamu sudah memanggil anak itu di server!]"
+                else:
+                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Balas dengan marah ke Zaki karena menyuruhmu mencari orang yang tidak ada di server!]"
+            
+            if not is_discord_command:
+                pc_result = pc_controller.handle_pc_action(user_input)
+                if pc_result:
+                    pc_msg, pc_func = pc_result
+                    user_input += f"\n\n[SISTEM INFO: Kamu akan mengeksekusi perintah Zaki yaitu: '{pc_msg}'. Balas perintahnya dengan gaya Tsundere/Yandere mu, beri tahu dia bahwa kamu sedang membukanya!]"
+
             response = chat_session.send_message(user_input)
             raw_output = response.text.strip()
 
-            # Ekstrak Teks dan Emosi
             emotion, spoken_dialogue = extract_emotion_and_text(raw_output)
 
             if len(spoken_dialogue) > 1:
-                print(f"Tuzi: {spoken_dialogue}")
                 bridge.subtitle_signal.emit(spoken_dialogue)
 
-                # Jalankan Suara
+                if pc_func:
+                    threading.Thread(target=pc_func, daemon=True).start()
+
                 if not discord_voice_bot.is_device_muted():
                     with speech_lock:
                         loop.run_until_complete(
@@ -315,13 +305,9 @@ def terminal_chat_loop(bridge, tts_engine):
             time.sleep(0.3)
             bridge.subtitle_signal.emit("")
 
-        except Exception as e:
-            print(f"\n[Error Gemini] {e}")
+        except Exception:
+            pass
 
-
-# ==============================================================================
-# 4. ENTRY POINT
-# ==============================================================================
 if __name__ == "__main__":
     server_thread = threading.Thread(target=start_local_server, daemon=True)
     server_thread.start()
