@@ -6,6 +6,7 @@ import requests
 
 import config
 from local_llm_client import LocalLLMClient
+import pc_controller # <--- TAMBAHAN: Import modul kontrol PC
 
 # ==============================================================================
 # KONFIGURASI GPT-SoVITS & AUDIO
@@ -90,7 +91,20 @@ def main():
                 print("\n[Tuzi] Sampai jumpa!")
                 generate_and_play_voice("Sampai jumpa lagi!")
                 break
+                
+            # ==========================================================
+            # TAMBAHAN: DETEKSI & EKSEKUSI PERINTAH PC SEBELUM LLM BERPIKIR
+            # ==========================================================
+            pc_action = pc_controller.handle_pc_action(user_input)
+            
+            if pc_action:
+                print(f"[Sistem] ⚙️ Mengeksekusi: {pc_action}")
+                # Menyisipkan info agar LLM tahu aksinya sudah dilakukan
+                user_input += f"\n\n[SISTEM INFO: Kamu baru saja mengeksekusi perintah Zaki yaitu: '{pc_action}'. Balas perintahnya dengan gayamu yang sedikit Tsundere/blak-blakan, beri tahu dia bahwa kamu sudah membukanya!]"
 
+            # ==========================================================
+            # PROMPT LLM
+            # ==========================================================
             prompt = f"""[ROLEPLAY: TUZI]
 Kamu adalah Tuzi, asisten AI pribadi yang santai, cerdas, ramah, dan sedikit blak-blakan.
 Jawab pesan user dengan singkat, padat, dan natural saat diucapkan. DILARANG menggunakan emoji.
