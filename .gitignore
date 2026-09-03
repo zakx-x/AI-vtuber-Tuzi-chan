@@ -13,3 +13,5 @@ Assets/model/
 /venv
 /vts_token.txt
 /__pycache__
+/cek_model.py
+/cek_suara.py
