@@ -18,6 +18,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import pygame
+import edge_tts
 from elevenlabs.client import ElevenLabs
 
 from PyQt5.QtCore import (
@@ -219,7 +220,7 @@ class ElevenLabsTTSEngine:
             return
             
         try:
-            print("\n[TTS] ⏳ Menghasilkan suara dari ElevenLabs...")
+            print("\n[TTS]  Menghasilkan suara dari ElevenLabs...")
             
             response = self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
@@ -249,8 +250,44 @@ class ElevenLabsTTSEngine:
                 pass
                 
         except Exception as e:
-            print(f"\n[TTS Error] ElevenLabs gagal: {e}")
-            self.bridge.mouth_signal.emit(0.0)
+            print(f"\n[SYSTEM] ElevenLabs Gagal ({e}). Mengaktifkan Fallback ke Edge-TTS 🟡...")
+            try:
+                if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
+                    voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
+                elif any(w in text.lower().split() for w in ["what", "the", "fuck", "you", "stfu", "bitch"]):
+                    voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
+                else:
+                    voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+                    tmp_path = fp.name
+
+                communicate = edge_tts.Communicate(
+                    text, 
+                    voice, 
+                    pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"), 
+                    rate=getattr(config, "EDGE_TTS_RATE", "+5%")
+                )
+                await communicate.save(tmp_path)
+                
+                pygame.mixer.music.load(tmp_path)
+                pygame.mixer.music.play()
+                
+                while pygame.mixer.music.get_busy():
+                    self.bridge.mouth_signal.emit(random.uniform(0.1, 0.9))
+                    await asyncio.sleep(0.08)
+                    
+                self.bridge.mouth_signal.emit(0.0)
+                
+                try:
+                    pygame.mixer.music.unload()
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
+            except Exception as edge_e:
+                print(f"\n[TTS Error] Edge-TTS juga gagal: {edge_e}")
+                self.bridge.mouth_signal.emit(0.0)
 
 def extract_emotion_and_text(raw_text: str) -> tuple[str, str]:
     emo_match = re.search(r"\[EMO:\s*(\w+)\]", raw_text, flags=re.IGNORECASE)
@@ -335,7 +372,7 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
-            print(f"\n[Tuzi Memproses] ⏳: {user_input}")
+            print(f"\n[Tuzi Memproses] : {user_input}")
 
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
@@ -359,31 +396,25 @@ def chat_processor_loop(bridge, tts_engine):
             is_discord_command = False
             pc_func = None
 
-# testing discord call
+            join_vc_match = re.search(r"\b(masuk|join|susul)\b.*\b(voice|vc|call|discord|z|zak)\b", user_input.lower())
+            leave_vc_match = re.search(r"\b(keluar|leave|putus)\b.*\b(voice|vc|call|discord)\b", user_input.lower())
 
-            join_vc_match = re.search(r"\b(masuk|join|susul)\b.*\b(voice|vc|call|discord)\b", user_input.lower())
             if join_vc_match:
                 is_discord_command = True
-                success, msg = discord_voice_bot.join_master_vc_sync()
+                success, code_or_channel, msg_or_owner = discord_voice_bot.trigger_join_from_voice()
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja berhasil menyusul Zaki ke dalam Voice Channel Discord. Sapa dia dan orang-orang di sana dengan nada Tsundere/angkuh!]"
+                    user_input += f"\n\n[SISTEM INFO: Kamu berhasil menyusul Zaki (z) ke Voice Channel '{code_or_channel}'. Sapa dia dengan nada Tsundere/sassy, tunjukkan kalau kamu repot-repot datang ke VC demi dia!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Kamu gagal masuk ke Voice Channel. Alasan: {msg}. Marahi Zaki karena menyuruhmu menyusul tapi dia sendiri belum masuk ke Voice Channel mana pun!]"
+                    user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}. Marahi si Z karena menyuruhmu menyusul tapi dia sendiri belum masuk ke Voice Channel mana pun!]"
             
-            if tag_match:
-                target_name = tag_match.group(1)
+            elif leave_vc_match:
                 is_discord_command = True
-                success, msg = discord_voice_bot.trigger_tag_user_sync(target_name)
+                success = discord_voice_bot.trigger_leave_from_voice()
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja men-tag '{target_name}' di Discord. Balas dengan gayamu yang Tsundere/blak-blakan, beri tahu Zaki bahwa kamu sudah memanggil anak itu di server!]"
+                    user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan ala Tsundere/angkuh kepada Zaki!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Balas dengan marah ke Zaki karena menyuruhmu mencari orang yang tidak ada di server!]"
-            
-            if not is_discord_command:
-                pc_result = pc_controller.handle_pc_action(user_input)
-                if pc_result:
-                    pc_msg, pc_func = pc_result
-                    user_input += f"\n\n[SISTEM INFO: Kamu akan mengeksekusi perintah Zaki yaitu: '{pc_msg}'. Balas perintahnya dengan gaya Tsundere/Yandere mu, beri tahu dia bahwa kamu sedang membukanya!]"
+                    user_input += "\n\n[SISTEM INFO: Zaki menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Ejek dia karena pikun!]"
+            # ---------------------------------------------
 
             chat_history.append({"role": "user", "content": user_input})
             

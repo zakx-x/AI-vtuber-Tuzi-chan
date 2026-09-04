@@ -16,7 +16,8 @@ import edge_tts
 import requests
 import speech_recognition as sr
 import config
-from local_llm_client import LocalLLMClient
+from elevenlabs.client import ElevenLabs
+from groq import Groq
 
 logging.getLogger("discord.ext.voice_recv").setLevel(logging.ERROR)
 logging.getLogger("discord.voice_state").setLevel(logging.WARNING)
@@ -47,11 +48,30 @@ intents.members = True
 intents.guilds = True
 
 bot = commands.Bot(command_prefix=getattr(config, "DISCORD_COMMAND_PREFIX", "!"), intents=intents)
-llm = LocalLLMClient()
+
 bot_event_loop = None
 is_bot_speaking = False
 _is_device_muted = False
 latest_mention_data = None
+eleven_client = None
+groq_client = None
+_locked_language = None
+
+def get_eleven_client():
+    global eleven_client
+    if eleven_client is None:
+        api_key = getattr(config, "ELEVENLABS_API_KEY", "")
+        if api_key and not api_key.startswith("paste"):
+            eleven_client = ElevenLabs(api_key=api_key)
+    return eleven_client
+
+def get_groq_client():
+    global groq_client
+    if groq_client is None:
+        api_key = getattr(config, "GROQ_API_KEY", "")
+        if api_key and not api_key.startswith("MASUKKAN"):
+            groq_client = Groq(api_key=api_key)
+    return groq_client
 
 def is_device_muted() -> bool:
     return _is_device_muted
@@ -60,83 +80,68 @@ def set_device_mute(muted: bool):
     global _is_device_muted
     _is_device_muted = muted
 
-def generate_zeta_voice_sync(text: str, filename: str = "temp_discord_voice.wav") -> bool:
+def generate_zeta_voice_sync(text: str, filename: str = "temp_discord_voice.mp3") -> bool:
     clean = re.sub(r"\[.*?\]", "", text)
-    clean = re.sub(r"<@!?\d+>", "", clean).strip()
+    clean = re.sub(r"<@!?\d+>", "", clean)
+    clean = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff]+", "", clean).strip()
     if not clean:
         return False
 
-    if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", clean):
-        selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
-    elif any(w in clean.lower().split() for w in ["what", "the", "fuck", "you", "stfu", "kys", "bitch", "shut", "bro", "dude"]):
-        selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
-    else:
-        selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
+    client = get_eleven_client()
+    voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 
-    temp_edge = f"temp_edge_dc_{int(time.time() * 1000)}.wav"
-
-    async def _gen_edge():
-        communicate = edge_tts.Communicate(
-            clean,
-            selected_voice,
-            pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"),
-            rate=getattr(config, "EDGE_TTS_RATE", "+5%")
-        )
-        await communicate.save(temp_edge)
-
-    try:
-        asyncio.run(_gen_edge())
-        server_success = False
+    if client:
         try:
-            payload = {
-                "input_path": os.path.abspath(temp_edge),
-                "output_path": os.path.abspath(filename),
-                "pitch": getattr(config, "RVC_PITCH", 4),
-                "f0_method": getattr(config, "RVC_F0_METHOD", "rmvpe"),
-                "index_rate": getattr(config, "RVC_INDEX_RATE", 1.0),
-                "protect": getattr(config, "RVC_PROTECT", 0.15),
-            }
-            res = requests.post("http://127.0.0.1:5050/infer", json=payload, timeout=5)
-            if res.status_code == 200 and os.path.exists(filename) and os.path.getsize(filename) > 1000:
-                server_success = True
+            response = client.text_to_speech.convert(
+                voice_id=voice_id,
+                model_id="eleven_multilingual_v2",
+                text=clean
+            )
+            audio_bytes = b"".join(response)
+            with open(filename, "wb") as f:
+                f.write(audio_bytes)
+            if os.path.exists(filename) and os.path.getsize(filename) > 500:
+                return True
         except Exception:
             pass
 
-        if not server_success:
-            applio_dir = getattr(config, "APPLIO_DIR", r"E:\Applio-main")
-            applio_python = getattr(config, "APPLIO_PYTHON", os.path.join(applio_dir, "env", "python.exe"))
-            applio_core = getattr(config, "APPLIO_CORE", os.path.join(applio_dir, "core.py"))
-            model_path = getattr(config, "RVC_MODEL_PATH", os.path.join(applio_dir, "logs", "zetaTest", "zetaTest.pth"))
-            index_path = getattr(config, "RVC_INDEX_PATH", os.path.join(applio_dir, "logs", "zetaTest", "zeta.index"))
+    try:
+        if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", clean):
+            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
+        elif any(w in clean.lower().split() for w in ["what", "the", "fuck", "you", "stfu", "kys", "bitch", "shut", "bro", "dude"]):
+            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
+        else:
+            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
 
-            cmd = [
-                applio_python, applio_core, "infer", "--f0-method", getattr(config, "RVC_F0_METHOD", "rmvpe"),
-                "--pitch", str(getattr(config, "RVC_PITCH", 4)), "--index-rate", str(getattr(config, "RVC_INDEX_RATE", 1.0)),
-                "--protect", str(getattr(config, "RVC_PROTECT", 0.15)), "--pth-path", model_path,
-                "--index-path", index_path, "--input-path", temp_edge, "--output-path", filename,
-            ]
-            subprocess.run(cmd, capture_output=True, text=True, cwd=applio_dir)
+        async def _gen_edge():
+            communicate = edge_tts.Communicate(
+                clean,
+                selected_voice,
+                pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"),
+                rate=getattr(config, "EDGE_TTS_RATE", "+5%")
+            )
+            await communicate.save(filename)
 
-        if not (os.path.exists(filename) and os.path.getsize(filename) > 1000):
-            shutil.copyfile(temp_edge, filename)
-
-        if os.path.exists(temp_edge):
-            os.remove(temp_edge)
-
-        return os.path.exists(filename) and os.path.getsize(filename) > 1000
+        asyncio.run(_gen_edge())
+        return os.path.exists(filename) and os.path.getsize(filename) > 500
     except Exception:
-        if os.path.exists(temp_edge):
-            try:
-                os.remove(temp_edge)
-            except Exception:
-                pass
         return False
 
 def generate_llm_reply_sync(prompt: str) -> str:
-    full_text = ""
-    for token in llm.stream_response(prompt):
-        full_text += token
-    return re.sub(r"\[.*?\]", "", full_text).strip()
+    client = get_groq_client()
+    if client:
+        try:
+            res = client.chat.completions.create(
+                model="qwen/qwen3.8-27b",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.88,
+                max_tokens=150
+            )
+            raw = res.choices[0].message.content.strip()
+            return re.sub(r"\[.*?\]", "", raw).strip()
+        except Exception:
+            pass
+    return "Apaan sih."
 
 def detect_language(text: str) -> str:
     if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
@@ -242,7 +247,7 @@ def sanitize_reply_output(text: str) -> str:
     cleaned = remove_emojis_and_symbols(cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
 
-async def play_audio_to_vc_async(wav_path: str):
+async def play_audio_to_vc_async(audio_path: str):
     voice_client = None
     for guild in bot.guilds:
         if guild.voice_client and guild.voice_client.is_connected():
@@ -255,15 +260,16 @@ async def play_audio_to_vc_async(wav_path: str):
     playback_done = asyncio.Event()
     
     def after_done(error):
-        bot_event_loop.call_soon_threadsafe(playback_done.set)
+        if bot_event_loop and not bot_event_loop.is_closed():
+            bot_event_loop.call_soon_threadsafe(playback_done.set)
         try:
-            if os.path.exists(wav_path):
-                os.remove(wav_path)
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
         except Exception:
             pass
             
     ffmpeg_options = {"options": '-vn -filter:a "volume=1.2,aresample=48000:first_pts=0" -ac 2 -ar 48000'}
-    audio_source = discord.FFmpegPCMAudio(wav_path, executable=FFMPEG_PATH, **ffmpeg_options)
+    audio_source = discord.FFmpegPCMAudio(audio_path, executable=FFMPEG_PATH, **ffmpeg_options)
     voice_client.play(audio_source, after=after_done)
     await playback_done.wait()
 
@@ -271,9 +277,13 @@ def play_text_to_vc_sync(text: str):
     global bot_event_loop
     if not bot_event_loop or not bot.is_ready():
         return
-    wav_path = f"desktop_to_vc_{int(time.time())}.wav"
-    if generate_zeta_voice_sync(text, wav_path):
-        asyncio.run_coroutine_threadsafe(play_audio_to_vc_async(wav_path), bot_event_loop)
+    audio_path = f"desktop_to_vc_{int(time.time() * 1000)}.mp3"
+    if generate_zeta_voice_sync(text, audio_path):
+        future = asyncio.run_coroutine_threadsafe(play_audio_to_vc_async(audio_path), bot_event_loop)
+        try:
+            future.result(timeout=20)
+        except Exception:
+            pass
 
 class CustomDiscordVoiceSink(AudioSink):
     def __init__(self, loop, on_speech_callback):
@@ -348,7 +358,7 @@ class CustomDiscordVoiceSink(AudioSink):
         super().cleanup()
 
 async def process_and_speak_vc(user, user_text: str):
-    global is_bot_speaking
+    global is_bot_speaking, _locked_language
     voice_client = None
     for guild in bot.guilds:
         if guild.voice_client and guild.voice_client.is_connected():
@@ -356,36 +366,76 @@ async def process_and_speak_vc(user, user_text: str):
             break
     if not voice_client:
         return
+        
     is_bot_speaking = True
     lower_text = user_text.lower()
+    
+    if any(k in lower_text for k in ["ngomong bahasa inggris", "speak english", "pakai bahasa inggris"]):
+        _locked_language = "en"
+        reply_msg = "Fine, I will speak English from now on! Don't expect me to be nice though!"
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
+            await play_audio_to_vc_async(audio_path)
+        is_bot_speaking = False
+        return
+        
+    if any(k in lower_text for k in ["ngomong bahasa jepang", "speak japanese", "pakai bahasa jepang"]):
+        _locked_language = "ja"
+        reply_msg = "Cih, wakatta wa yo! Nihongo de hanashite ageru."
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
+            await play_audio_to_vc_async(audio_path)
+        is_bot_speaking = False
+        return
+        
+    if any(k in lower_text for k in ["kembali ke indonesia", "bahasa indonesia", "bahasa otomatis", "auto language"]):
+        _locked_language = None
+        reply_msg = "Hmph! Yaudah, aku balik pakai bahasa biasa lagi."
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
+            await play_audio_to_vc_async(audio_path)
+        is_bot_speaking = False
+        return
+
     if any(k in lower_text for k in ["bicara di device", "bicara di laptop", "unmute device"]):
         set_device_mute(False)
         reply_msg = "Baik, aku sekarang bersuara di laptop juga ya."
-        wav_path = f"vc_reply_{int(time.time())}.wav"
-        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, wav_path):
-            await play_audio_to_vc_async(wav_path)
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
+            await play_audio_to_vc_async(audio_path)
         is_bot_speaking = False
         return
+        
     if any(k in lower_text for k in ["bicara di discord saja", "mute device", "ngomong di discord aja"]):
         set_device_mute(True)
         reply_msg = "Siap, aku fokus berbicara di Discord VC saja."
-        wav_path = f"vc_reply_{int(time.time())}.wav"
-        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, wav_path):
-            await play_audio_to_vc_async(wav_path)
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
+            await play_audio_to_vc_async(audio_path)
         is_bot_speaking = False
         return
     
-    prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER IN VC]\nKamu adalah Tuzi di Voice Channel Discord. Karaktermu santai, savage, sarkastik, dan blak-blakan tanpa sensor.\nPengguna ({user.display_name}) berkata: \"{user_text}\"\nATURAN:\n1. Balas dengan kalimat pendek yang langsung ke inti dan terdengar natural.\n2. Jika dia toxic atau berkata kasar, balas roasting dan ledek balik secara frontal.\n3. DILARANG memakai emoji."
+    if _locked_language:
+        current_lang = _locked_language
+    else:
+        current_lang = detect_language(user_text)
+        
+    if current_lang == "en":
+        prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER IN VC]\nYou are Tuzi, a Tsundere in a Discord Voice Channel. You are sassy, sarcastic, and blunt.\nUser ({user.display_name}) said: \"{user_text}\"\nRULES:\n1. Reply entirely in ENGLISH. Keep it short, punchy, and natural.\n2. If they are toxic, roast them back frontally.\n3. NO emojis."
+    elif current_lang == "ja":
+        prompt = f"[ROLEPLAY: ツンデレ Discord VC]\nあなたはDiscordのVCにいるTuziです。ツンデレで、生意気で、皮肉屋です。\nユーザー ({user.display_name}) の発言: \"{user_text}\"\nルール:\n1. すべて日本語で返信してください。短く、自然な会話体で。\n2. 煽られたら、容赦なく言い返してください。\n3. 絵文字禁止。"
+    else:
+        prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER IN VC]\nKamu adalah Tuzi di Voice Channel Discord. Karaktermu santai, savage, Tsundere, dan blak-blakan tanpa sensor.\nPengguna ({user.display_name}) berkata: \"{user_text}\"\nATURAN:\n1. Balas dengan bahasa INDONESIA gaul. Kalimat pendek yang langsung ke inti.\n2. Jika dia toxic, balas roasting secara frontal.\n3. DILARANG memakai emoji."
     
     try:
         clean_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
         clean_reply = sanitize_reply_output(clean_reply)
         if not clean_reply:
             clean_reply = "Apaan sih."
-        wav_path = f"vc_reply_{int(time.time())}.wav"
-        success = await asyncio.to_thread(generate_zeta_voice_sync, clean_reply, wav_path)
+        audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
+        success = await asyncio.to_thread(generate_zeta_voice_sync, clean_reply, audio_path)
         if success and voice_client.is_connected():
-            await play_audio_to_vc_async(wav_path)
+            await play_audio_to_vc_async(audio_path)
     except Exception:
         pass
     finally:
@@ -511,7 +561,7 @@ async def async_trigger_join_vc() -> tuple[bool, str, str]:
                 m_username = member.name.lower()
                 m_display = (member.display_name or "").lower()
                 m_global = (member.global_name or "").lower()
-                if OWNER_USERNAME in [m_username, m_display, m_global] or OWNER_USERNAME in m_username:
+                if OWNER_USERNAME in [m_username, m_display, m_global] or OWNER_USERNAME in m_username or "zak" in m_username or "zaki" in m_username:
                     target_channel = vc
                     target_guild = guild
                     owner_found_name = member.display_name
@@ -538,9 +588,9 @@ async def async_trigger_join_vc() -> tuple[bool, str, str]:
                 
         set_device_mute(True)
         greeting = "Halo semuanya! Tuzi sudah masuk ke voice channel ya."
-        wav_path = "discord_greeting.wav"
-        if await asyncio.to_thread(generate_zeta_voice_sync, greeting, wav_path):
-            await play_audio_to_vc_async(wav_path)
+        audio_path = f"discord_greeting_{int(time.time())}.mp3"
+        if await asyncio.to_thread(generate_zeta_voice_sync, greeting, audio_path):
+            await play_audio_to_vc_async(audio_path)
         return True, target_channel.name, owner_found_name
     except Exception as e:
         return False, "ERROR", str(e)
@@ -593,8 +643,9 @@ async def join_cmd(ctx):
     set_device_mute(True)
     await ctx.send(f"Tuzi sudah masuk ke **{channel.name}**!")
     greeting = "Halo! Tuzi sudah masuk."
-    if await asyncio.to_thread(generate_zeta_voice_sync, greeting, "discord_greeting.wav"):
-        await play_audio_to_vc_async("discord_greeting.wav")
+    greet_path = f"discord_greeting_{int(time.time())}.mp3"
+    if await asyncio.to_thread(generate_zeta_voice_sync, greeting, greet_path):
+        await play_audio_to_vc_async(greet_path)
 
 @bot.command(name="leave", aliases=["keluar", "disconnect"])
 async def leave_cmd(ctx):

@@ -12,12 +12,10 @@ class Live2DCanvas(QOpenGLWidget):
 
   def __init__(self, model_json_path, parent=None):
     super().__init__(parent)
-    # Konversi path ke format forward slash Unix agar kompatibel dengan C++ SDK
     self.model_json_path = os.path.abspath(model_json_path).replace("\\", "/")
     self.model_dir = os.path.dirname(self.model_json_path)
     self.model = None
 
-    # Parameter Gerakan
     self.mouth_open = 0.0
     self.target_angle_x = 0.0
     self.target_angle_y = 0.0
@@ -27,8 +25,6 @@ class Live2DCanvas(QOpenGLWidget):
 
   def initializeGL(self):
     self.makeCurrent()
-
-    # Pindahkan working directory sementara ke folder model agar file .moc3 & textures terbaca
     orig_cwd = os.getcwd()
     os.chdir(self.model_dir)
 
@@ -50,7 +46,6 @@ class Live2DCanvas(QOpenGLWidget):
 
     live2d.clearBuffer()
 
-    # 1. Animasi Idle Menoleh
     now = time.time()
     if now - self.last_look_time > random.uniform(3.0, 5.0):
       self.target_angle_x = random.uniform(-20.0, 20.0)
@@ -60,10 +55,8 @@ class Live2DCanvas(QOpenGLWidget):
     self.curr_angle_x += (self.target_angle_x - self.curr_angle_x) * 0.05
     self.curr_angle_y += (self.target_angle_y - self.curr_angle_y) * 0.05
 
-    # 2. Pernapasan Otomatis
     breath_val = (math.sin(now * 2.5) + 1.0) / 2.0
 
-    # 3. Kirim Parameter ke Model
     self.model.SetParameterValue("ParamAngleX", self.curr_angle_x, 1.0)
     self.model.SetParameterValue("ParamAngleY", self.curr_angle_y, 1.0)
     self.model.SetParameterValue(
@@ -84,21 +77,29 @@ class AvatarWindow(QMainWindow):
   def __init__(self, model_json_path):
     super().__init__()
     self.setWindowTitle("AI Avatar")
-    self.resize(500, 700)
+    
+    self.resize(800, 1000)
 
-    # Window Transparan & Frameless
     self.setAttribute(Qt.WA_TranslucentBackground, True)
-    self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
 
     self.canvas = Live2DCanvas(model_json_path, self)
     self.setCentralWidget(self.canvas)
 
-    # Loop Render 60 FPS
     self.timer = QTimer(self)
     self.timer.timeout.connect(self.canvas.update)
     self.timer.start(16)
 
     self.drag_position = None
+
+    QTimer.singleShot(100, self.move_to_bottom_right)
+
+  def move_to_bottom_right(self):
+    screen_geo = self.screen().availableGeometry()
+    x = screen_geo.width() - self.width()
+    y = screen_geo.height() - int(self.height() * 0.55) 
+    
+    self.move(x, y)
 
   def mousePressEvent(self, event):
     if event.button() == Qt.LeftButton:
