@@ -33,7 +33,7 @@ from PyQt5.QtCore import (
 )
 from PyQt5.QtWebChannel import QWebChannel
 from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMainWindow
 
 import ai_tools
 import avatar_motion
@@ -41,7 +41,6 @@ import config
 import discord_voice_bot
 import pc_controller
 from stt_engine import STTEngine
-
 from groq import Groq
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -74,20 +73,26 @@ class AvatarSignalBridge(QObject):
     move_signal = pyqtSignal(str)
     action_signal = pyqtSignal(str)
     subtitle_signal = pyqtSignal(str)
+    expression_signal = pyqtSignal(str)
 
-class TransparentAvatarWindow(QWebEngineView):
+class TransparentAvatarWindow(QMainWindow):
     def __init__(self, bridge):
         super().__init__()
         self.bridge = bridge
+        self.drag_position = None
 
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.SubWindow | Qt.Tool
         )
-        self.page().setBackgroundColor(Qt.transparent)
 
-        settings = self.page().settings()
+        self.webview = QWebEngineView(self)
+        self.webview.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.webview.page().setBackgroundColor(Qt.transparent)
+        self.webview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setCentralWidget(self.webview)
+
+        settings = self.webview.page().settings()
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
@@ -95,17 +100,18 @@ class TransparentAvatarWindow(QWebEngineView):
 
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
-        self.page().setWebChannel(self.channel)
+        self.webview.page().setWebChannel(self.channel)
 
         self.bridge.mouth_signal.connect(self.update_mouth_in_web)
         self.bridge.move_signal.connect(self.smooth_move_to)
         self.bridge.action_signal.connect(self.execute_motion_action)
         self.bridge.subtitle_signal.connect(self.update_subtitle_in_web)
+        self.bridge.expression_signal.connect(self.update_expression_in_web)
 
-        self.loadFinished.connect(self.inject_subtitle_system)
-        self.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
+        self.webview.loadFinished.connect(self.inject_subtitle_system)
+        self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
         
-        self.resize(450, 750)
+        self.resize(750, 1000)
 
         screen_geo = QApplication.primaryScreen().geometry()
         w, h = self.width(), self.height()
@@ -114,6 +120,20 @@ class TransparentAvatarWindow(QWebEngineView):
         self.anim = QPropertyAnimation(self, b"pos")
         self.anim.setDuration(900)
         self.anim.setEasingCurve(QEasingCurve.OutCubic)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and self.drag_position:
+            self.move(event.globalPos() - self.drag_position)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self.drag_position = None
+        event.accept()
 
     def inject_subtitle_system(self):
         js_init = """
@@ -168,15 +188,15 @@ class TransparentAvatarWindow(QWebEngineView):
             };
         })();
         """
-        self.page().runJavaScript(js_init)
+        self.webview.page().runJavaScript(js_init)
 
     def update_mouth_in_web(self, value: float):
-        self.page().runJavaScript(f"if(window.setMouthOpen) setMouthOpen({value});")
+        self.webview.page().runJavaScript(f"if(window.setMouthOpen) setMouthOpen({value});")
 
     @pyqtSlot(str)
     def update_subtitle_in_web(self, html_content: str):
         escaped = json.dumps(html_content)
-        self.page().runJavaScript(f"if(window.setSubtitle) setSubtitle({escaped});")
+        self.webview.page().runJavaScript(f"if(window.setSubtitle) setSubtitle({escaped});")
 
     @pyqtSlot(str)
     def smooth_move_to(self, target: str):
@@ -206,7 +226,11 @@ class TransparentAvatarWindow(QWebEngineView):
             }}
         }})();
         """
-        self.page().runJavaScript(js_code)
+        self.webview.page().runJavaScript(js_code)
+        
+    @pyqtSlot(str)
+    def update_expression_in_web(self, emo: str):
+        self.webview.page().runJavaScript(f"if(window.setExpression) setExpression('{emo}');")
 
 class ElevenLabsTTSEngine:
     def __init__(self, bridge):
@@ -435,6 +459,8 @@ def chat_processor_loop(bridge, tts_engine):
             chat_history.append({"role": "assistant", "content": raw_output})
 
             emotion, spoken_dialogue = extract_emotion_and_text(raw_output)
+            
+            bridge.expression_signal.emit(emotion)
 
             if len(spoken_dialogue) > 1:
                 bridge.subtitle_signal.emit(spoken_dialogue)
@@ -452,6 +478,7 @@ def chat_processor_loop(bridge, tts_engine):
 
             time.sleep(0.3)
             bridge.subtitle_signal.emit("")
+            bridge.expression_signal.emit("natural")
 
         except Exception as e:
             print(f"\n[Otak Tuzi Error] {e}")
