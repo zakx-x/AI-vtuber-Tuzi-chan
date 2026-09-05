@@ -1,47 +1,69 @@
+import os
+import tempfile
 import speech_recognition as sr
-
+from groq import Groq
+import config
 
 class STTEngine:
+    def __init__(self, language="id-ID"):
+        self.recognizer = sr.Recognizer()
+        self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.energy_threshold = 1200
+        self.recognizer.pause_threshold = 1.0
+        self.groq_client = Groq(api_key=config.GROQ_API_KEY)
 
-  def __init__(self, language: str = "id-ID"):
-    self.recognizer = sr.Recognizer()
-    self.language = language
-
-    # 1. Toleransi jeda hening setelah berbicara (dinaikkan ke 1.8 detik)
-    # AI akan menunggu hening selama 1.8 detik sebelum menganggap kalimat selesai
-    self.recognizer.pause_threshold = 1.8
-
-    # 2. Toleransi keheningan jeda antar kata saat Anda berpikir
-    self.recognizer.non_speaking_duration = 1.0
-
-    # 3. Waktu minimum suara berbicara agar terdeteksi (mencegah desahan/klik terpotong)
-    self.recognizer.phrase_threshold = 0.3
-
-    # 4. Sensitivitas mikrofon (noise threshold dinamis)
-    self.recognizer.dynamic_energy_threshold = True
-    self.recognizer.energy_threshold = 300
-
-  def listen_voice(self) -> str:
-    with sr.Microphone() as source:
-      # Kalibrasi noise ruangan selama 1 detik agar lebih akurat membedakan suara Anda dan hening
-      self.recognizer.adjust_for_ambient_noise(source, duration=0.8)
-      print("\n[Mic] 🎙️ Mendengarkan... (Silakan bicara)")
-
-      try:
-        # Rekam audio dengan batas durasi bicara hingga 30 detik
-        audio = self.recognizer.listen(
-            source, timeout=None, phrase_time_limit=30
-        )
-        print("[Mic] ⏳ Menerjemahkan suara...")
-
-        text = self.recognizer.recognize_google(audio, language=self.language)
-        return text.strip()
-
-      except sr.UnknownValueError:
-        return ""
-      except sr.RequestError as e:
-        print(f"[STT Error] Gagal terhubung ke layanan speech: {e}")
-        return ""
-      except Exception as e:
-        print(f"[STT Error] {e}")
-        return ""
+    def listen_voice(self):
+        with sr.Microphone() as source:
+            print("\n[🎙️] Mendengarkan...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            try:
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                print("[🎙️] Memproses ucapan...")
+                
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    f.write(audio.get_wav_data())
+                    tmp_path = f.name
+                
+                with open(tmp_path, "rb") as audio_file:
+                    transcription = self.groq_client.audio.transcriptions.create(
+                        file=(tmp_path, audio_file.read()),
+                        model="whisper-large-v3",
+                        prompt="Tuzi, Zak, Jak.",
+                        response_format="text"
+                    )
+                
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                
+                raw_text = transcription.strip()
+                clean_text = raw_text.lower().replace(".", "").replace("!", "").replace("?", "").replace(",", "").strip()
+                
+                hallucinations = [
+                    "thank you",
+                    "thank you for watching",
+                    "thanks for watching",
+                    "please subscribe",
+                    "subscribe to my channel",
+                    "you",
+                    "bye",
+                    "transcribe accurately",
+                    "hej",
+                    "gawsa",
+                    "gawsa gawsa",
+                    "i just want to say",
+                    "oboe",
+                    "oboe hello zak"
+                ]
+                
+                if clean_text in hallucinations or len(clean_text) <= 2:
+                    return ""
+                    
+                return raw_text
+                
+            except sr.WaitTimeoutError:
+                return ""
+            except Exception as e:
+                print(f"[STT Error] {e}")
+                return ""

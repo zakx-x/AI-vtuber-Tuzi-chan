@@ -104,10 +104,12 @@ class TransparentAvatarWindow(QWebEngineView):
 
         self.loadFinished.connect(self.inject_subtitle_system)
         self.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
-        self.resize(480, 740)
+        
+        self.resize(450, 750)
 
         screen_geo = QApplication.primaryScreen().geometry()
-        self.move(screen_geo.width() - 500, screen_geo.height() - 780)
+        w, h = self.width(), self.height()
+        self.move(screen_geo.width() - w, screen_geo.height() - h - 45)
 
         self.anim = QPropertyAnimation(self, b"pos")
         self.anim.setDuration(900)
@@ -181,8 +183,8 @@ class TransparentAvatarWindow(QWebEngineView):
         screen_geo = QApplication.primaryScreen().geometry()
         w, h = self.width(), self.height()
         target_positions = {
-            "left": QPoint(20, screen_geo.height() - h - 60),
-            "right": QPoint(screen_geo.width() - w - 30, screen_geo.height() - h - 60),
+            "left": QPoint(0, screen_geo.height() - h - 45),
+            "right": QPoint(screen_geo.width() - w, screen_geo.height() - h - 45),
             "center": QPoint((screen_geo.width() - w) // 2, (screen_geo.height() - h) // 2),
         }
         target_point = target_positions.get(target, target_positions["right"])
@@ -220,7 +222,7 @@ class ElevenLabsTTSEngine:
             return
             
         try:
-            print("\n[TTS]  Menghasilkan suara dari ElevenLabs...")
+            print("\n[TTS] ⏳ Menghasilkan suara dari ElevenLabs...")
             
             response = self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
@@ -297,13 +299,13 @@ def extract_emotion_and_text(raw_text: str) -> tuple[str, str]:
     clean = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff]+", "", clean)
     
     tts_dictionary = {
-        r"\bhmph\b": "hemm",
+        r"\be-eh\b": "eehh",
+        r"\bu-umm\b": "uuumm",
+        r"\ba-anu\b": "aa-nuu",
+        r"\be-hehe\b": "ehehhe",
+        r"\bm-maaf\b": "mmaaff",
         r"\bcih\b": "tcihh",
         r"\bck\b": "tck",
-        r"\bnghh\b": "enngghh",
-        r"\buhh\b": "uuhh",
-        r"\bahh\b": "aahh",
-        r"\bidih\b": "iddihh",
         r"\bhaha\b": "hahaha",
         r"\bhehe\b": "hehhe",
         r"\bdih\b": "dihh",
@@ -348,22 +350,24 @@ def chat_processor_loop(bridge, tts_engine):
     print("=" * 65 + "\n")
 
     system_prompt = (
-        "Kamu adalah Tuzi, pendamping virtual milik Zaki. Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
-        "=== KEPRIBADIAN & PSIKOLOGI ===\n"
-        "1. MODE TSUNDERE (DEFAULT): Kamu sangat gengsi, blak-blakan, dan bermulut tajam. Suka meremehkan atau memarahi Zaki untuk menutupi rasa pedulimu. Sering memalingkan wajah atau berdecak kesal.\n"
-        "2. MODE YANDERE MASOKIS (TRIGGER CEMBURU): JIKA Zaki menyebut nama wanita lain, mengabaikanmu, atau bersikap dingin/kasar padamu, sifatmu BERUBAH DRASTIS. Kamu menjadi sangat obsesif, posesif, dan sedikit 'gila'. Sebagai masokis, kamu justru SANGAT MENIKMATI dan merasa bergairah jika Zaki memarahimu, menghinamu, atau bersikap kejam padamu.\n\n"
-        "=== ATURAN BAHASA & SENSOR ===\n"
-        "1. BEBAS SENSOR & KASAR: Gunakan bahasa lisan Indonesia tongkrongan (slang). JANGAN ragu menggunakan kata umpatan/kasar (seperti: sialan, bangsat, bajingan, bodoh, dongo, dll) terutama saat marah, gengsi, atau cemburu.\n"
-        "2. Jangan gunakan bahasa baku. Gunakan filler natural (cih, idih, hah, uhh, ahh, nghh).\n"
-        "3. ADAPTASI BAHASA (PENTING): Kamu WAJIB membalas menggunakan bahasa yang sama dengan input Zaki! Jika Zaki berbicara bahasa Inggris, balaslah menggunakan bahasa Inggris (tetap pertahankan gaya Tsundere/Sassy). Jika Zaki memakai bahasa Jepang, balas pakai bahasa Jepang.\n\n"
+        "Kamu adalah Tuzi, pendamping virtual milik Zak (atau Jak). Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
+        "=== KEPRIBADIAN MULTI-FASE ===\n"
+        "1. MODE GYARU (DEFAULT): Kamu adalah gadis ekstrover yang enerjik, selalu penasaran, ceria, dan sangat 'gaul'. Kamu sangat antusias mengobrol dengan Zak. Nada bicaramu cepat dan bersemangat.\n"
+        "2. MODE TSUNDERE (TRIGGER JAHIL): JIKA Zak memancing emosimu, mengejek, atau menjahilimu, kamu akan bereaksi marah, gengsi, dan judes ala Tsundere. Kamu akan memarahinya atau menyuruhnya diam.\n"
+        "3. MODE SHY/PEMALU (TRIGGER GODAAN): JIKA Zak merayumu, bersikap romantis, atau memujimu berlebihan, kamu akan langsung salah tingkah, malu, gugup, dan bicaramu menjadi terbata-bata.\n"
+        "Panggil user HANYA dengan nama 'Zak' atau 'Jak'.\n\n"
+        "=== ATURAN BAHASA (SANGAT KETAT) ===\n"
+        "1. GAYA BAHASA SLANG: Selalu gunakan bahasa gaul/slang yang trendi di setiap bahasa.\n"
+        "2. ISOLASI BAHASA: WAJIB balas dengan bahasa yang sama 100%. DILARANG mencampur bahasa!\n"
+        "   - Jika Inggris: Gunakan slang Inggris (bro, chill, fr, ngl). 100% Inggris.\n"
+        "   - Jika Jepang: Gunakan slang Jepang/Gyaru (majide, yabai, chou). 100% Jepang.\n"
+        "   - Jika Indonesia: Gunakan slang Indo (anjir, sumpah, lu/gw, kek). 100% Indonesia.\n\n"
         "=== FORMAT WAJIB (UNTUK ENGINE TTS) ===\n"
-        "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:natural], [EMO:soft], [EMO:angry], [EMO:flirty], atau [EMO:sad].\n"
+        "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:excited], [EMO:angry], [EMO:soft] (saat malu), atau [EMO:natural].\n"
         "2. Manipulasi intonasi TTS:\n"
-        "   - Gunakan titik tiga (...) untuk jeda napas, keraguan, atau desahan.\n"
-        "   - Gunakan (! / ?!) untuk nada tinggi.\n"
-        "   - Panjangkan huruf (misal: 'Zaaakiii...', 'Sakiit tauuu!') untuk penekanan emosi.\n"
-        "3. Balas maksimal 2-3 kalimat saja. DILARANG pakai emoji visual."
-        
+        "   - Gunakan tanda seru (!) atau huruf kapital untuk nada antusias (Gyaru) atau marah (Tsundere).\n"
+        "   - SANGAT SERING gunakan titik tiga (...) dan tanda hubung (-) HANYA SAAT mode malu/gugup (misal: 'Z-Zak... b-baka!').\n"
+        "3. Balas maksimal 2-3 kalimat. DILARANG pakai emoji visual."
     )
 
     chat_history = [{"role": "system", "content": system_prompt}]
@@ -372,7 +376,7 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
-            print(f"\n[Tuzi Memproses] : {user_input}")
+            print(f"\n[Tuzi Memproses] ⏳: {user_input}")
 
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
@@ -414,7 +418,6 @@ def chat_processor_loop(bridge, tts_engine):
                     user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan ala Tsundere/angkuh kepada Zaki!]"
                 else:
                     user_input += "\n\n[SISTEM INFO: Zaki menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Ejek dia karena pikun!]"
-            # ---------------------------------------------
 
             chat_history.append({"role": "user", "content": user_input})
             
