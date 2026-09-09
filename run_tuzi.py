@@ -420,7 +420,6 @@ def chat_processor_loop(bridge, tts_engine):
                 bridge.subtitle_signal.emit("")
                 continue
 
-            tag_match = re.search(r"tag\s+(?:si\s+)?([a-zA-Z0-9_-]+)", user_input.lower())
             is_discord_command = False
             pc_func = None
 
@@ -442,6 +441,10 @@ def chat_processor_loop(bridge, tts_engine):
                     user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan ala Tsundere/angkuh kepada Zaki!]"
                 else:
                     user_input += "\n\n[SISTEM INFO: Zaki menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Ejek dia karena pikun!]"
+
+            tool_context = ai_tools.get_tools_context(user_input)
+            if tool_context:
+                user_input += f"\n\n{tool_context}"
 
             chat_history.append({"role": "user", "content": user_input})
             
