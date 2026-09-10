@@ -4,25 +4,31 @@ import urllib.parse
 import webbrowser
 
 def extract_search_target(text: str) -> str:
-    cleaned = re.sub(r"^(tuzi|halo tuzi|hi tuzi|eh tuzi|tolong|coba)\s+", "", text, flags=re.IGNORECASE).strip()
+    # 1. Bersihkan awalan obrolan (Indo & Eng)
+    cleaned = re.sub(r"^(tuzi|halo tuzi|hi tuzi|eh tuzi|tolong|coba|can you|can u|please|hey)\s+", "", text, flags=re.IGNORECASE).strip()
     
-    match = re.search(r"(?:cari|cariin|carikan|putar|putarkan|setel|setelkan|mainkan|tonton)\s+(?:lagu|video|tentang|berita)?\s*(.*)", cleaned, flags=re.IGNORECASE)
+    # 2. Tangkap kata SETELAH perintah pencarian utama
+    # Ini akan memastikan kata "search" atau "play" dilewati, dan hanya mengambil targetnya
+    match = re.search(r"(?:cari|cariin|carikan|putar|putarkan|setel|setelkan|mainkan|tonton|search|search for|play|find|look up)\s+(?:lagu|video|tentang|berita|for)?\s*(.*)", cleaned, flags=re.IGNORECASE)
     
     if match:
         target = match.group(1).strip()
     else:
         target = cleaned
 
+    # 3. Hapus kata-kata pengisi (filler) yang mungkin masih tertinggal di dalam teks
     filler_patterns = [
         r"\bbisakah\b", r"\bbisa\b", r"\bdong\b", r"\byah\b", r"\bya\b", r"\bnih\b", r"\baja\b", r"\bsih\b",
-        r"\byoutube\b", r"\bspotify\b", r"\btiktok\b", r"\binstagram\b", r"\big\b",
-        r"\bbuka\b", r"\bbukain\b", r"\bbukakan\b", r"\bopen\b", 
-        r"\bdi\b", r"\bke\b", r"\bdan\b", r"\btuzi\b", r"\bmau\b", r"\bingin\b", r"\blihat\b"
+        r"\byoutube\b", r"\byt\b", r"\bspotify\b", r"\btiktok\b", r"\binstagram\b", r"\big\b",
+        r"\bbuka\b", r"\bbukain\b", r"\bbukakan\b", r"\bopen\b", r"\bstart\b",
+        r"\bdi\b", r"\bke\b", r"\bdan\b", r"\band\b", r"\btuzi\b", r"\bmau\b", r"\bingin\b", r"\blihat\b",
+        r"\bcan u\b", r"\bcan you\b", r"\bon\b", r"\bthe\b"
     ]
     
     pattern = "|".join(filler_patterns)
     final_target = re.sub(pattern, "", target, flags=re.IGNORECASE)
     
+    # Hapus sisa spasi berlebih akibat pemotongan kata
     return re.sub(r"\s+", " ", final_target).strip()
 
 def play_spotify(song_name: str):
@@ -47,6 +53,7 @@ def open_youtube(query: str):
     target = extract_search_target(query)
     if not target or len(target) < 2:
         return "Membuka halaman utama YouTube", lambda: webbrowser.open("https://www.youtube.com")
+    
     encoded = urllib.parse.quote(target)
     return f"Membuka YouTube dan mencari video '{target}'", lambda: webbrowser.open(f"https://www.youtube.com/results?search_query={encoded}")
 
@@ -87,15 +94,20 @@ def launch_app(app_name: str):
 
 def handle_pc_action(text: str):
     lower = text.lower().strip()
-    if "youtube" in lower:
+    
+    # Deteksi yt (karena sebelumnya kamu mengetik 'yt' bukan 'youtube')
+    if "youtube" in lower or "yt" in lower:
         return open_youtube(lower)
     if "tiktok" in lower:
         return open_social_media(lower, "tiktok")
     if "instagram" in lower or "ig" in lower.split():
         return open_social_media(lower, "instagram")
-    if any(k in lower for k in ["spotify", "putar lagu", "setel lagu"]):
+        
+    if any(k in lower for k in ["spotify", "putar lagu", "setel lagu", "play song", "play music"]):
         return play_spotify(lower)
-    if lower.startswith("buka ") or lower.startswith("open "):
-        app = re.sub(r"^(buka|open)\s+", "", lower).strip()
+        
+    if lower.startswith("buka ") or lower.startswith("open ") or lower.startswith("launch "):
+        app = re.sub(r"^(buka|open|launch)\s+", "", lower).strip()
         return launch_app(app)
+        
     return None

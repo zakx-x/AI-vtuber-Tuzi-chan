@@ -315,33 +315,73 @@ class ElevenLabsTTSEngine:
                 print(f"\n[TTS Error] Edge-TTS juga gagal: {edge_e}")
                 self.bridge.mouth_signal.emit(0.0)
 
-def extract_emotion_and_text(raw_text: str) -> tuple[str, str]:
+def extract_emotion_and_text(raw_text: str) -> tuple[str, str, str]:
     emo_match = re.search(r"\[EMO:\s*(\w+)\]", raw_text, flags=re.IGNORECASE)
     emotion = emo_match.group(1).lower() if emo_match else "natural"
 
-    clean = re.sub(r"\[.*?\]", "", raw_text)
-    clean = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff]+", "", clean)
+    display_text = re.sub(r"\[.*?\]", "", raw_text)
+    
+    emoji_pattern = re.compile(
+        r"["
+        r"\U0001f600-\U0001f64f"
+        r"\U0001f300-\U0001f5ff"
+        r"\U0001f680-\U0001f6ff"
+        r"\U0001f1e0-\U0001f1ff"
+        r"\u2600-\u27bf"
+        r"\u2b50\u2b55"
+        r"]+", flags=re.UNICODE
+    )
+    display_text = emoji_pattern.sub("", display_text)
+    display_text = re.sub(r"\s+", " ", display_text).strip()
+
+    spoken_text = display_text
     
     tts_dictionary = {
-        r"\be-eh\b": "eehh",
-        r"\bu-umm\b": "uuumm",
-        r"\ba-anu\b": "aa-nuu",
-        r"\be-hehe\b": "ehehhe",
-        r"\bm-maaf\b": "mmaaff",
-        r"\bcih\b": "tcihh",
-        r"\bck\b": "tck",
-        r"\bhaha\b": "hahaha",
-        r"\bhehe\b": "hehhe",
-        r"\bdih\b": "dihh",
-        r"\bgrr\b": "grrr"
+        r"\be-eh\b": "eehh", r"\bu-umm\b": "uuumm", r"\ba-anu\b": "aa-nuu",
+        r"\be-hehe\b": "ehehhe", r"\bm-maaf\b": "mmaaff", r"\bcih\b": "tcihh",
+        r"\bck\b": "tck", r"\bhaha\b": "hahaha", r"\bhehe\b": "hehhe",
+        r"\bdih\b": "dihh", r"\bgrr\b": "grrr",
+        
+        r"\bfr\b": "for real",
+        r"\bfrfr\b": "for real for real",
+        r"\bong\b": "on god",
+        r"\bngl\b": "not gonna lie",
+        r"\btbh\b": "to be honest",
+        r"\bidk\b": "i don't know",
+        r"\bwtf\b": "what the fuck",
+        r"\blmao\b": "la mao", 
+        r"\baf\b": "as fuck",
+        r"\brn\b": "right now",
+        r"\bbrb\b": "be right back",
+        r"\bbtw\b": "by the way",
+        r"\bomg\b": "oh my god",
+        r"\bwdym\b": "what do you mean",
+        r"\bjk\b": "just kidding",
+        r"\bnvm\b": "nevermind",
+        
+        r"\byg\b": "yang",
+        r"\bgw\b": "gue",
+        r"\blu\b": "elu",
+        r"\bbgt\b": "banget",
+        r"\btp\b": "tapi",
+        r"\bjd\b": "jadi",
+        r"\bkalo\b": "kalau",
+        r"\bpls\b": "please",
+        r"\baja\b": "saja",
+        r"\bjg\b": "juga",
+        r"\banj\b": "anjay",
+        r"\bdgn\b": "dengan",
+        r"\bkrn\b": "karena",
+        r"\bsbb\b": "sorry baru balas",
+        
+        r"\bwww+\b": "kusa",
+        r"\bmjk\b": "majika",
     }
 
     for word, phonetic in tts_dictionary.items():
-        clean = re.sub(word, phonetic, clean, flags=re.IGNORECASE)
+        spoken_text = re.sub(word, phonetic, spoken_text, flags=re.IGNORECASE)
 
-    clean = re.sub(r"\s+", " ", clean).strip()
-
-    return emotion, clean
+    return emotion, display_text, spoken_text
 
 def keyboard_input_loop():
     while True:
@@ -423,10 +463,26 @@ def chat_processor_loop(bridge, tts_engine):
             is_discord_command = False
             pc_func = None
 
+            pc_action_result = pc_controller.handle_pc_action(user_input)
+            if pc_action_result:
+                pc_info, pc_func = pc_action_result
+                user_input += f"\n\n[SISTEM INFO: Kamu memiliki akses ke sistem PC. Kamu baru saja mengeksekusi perintah: '{pc_info}'. Konfirmasikan ke Zak dengan gayamu (Gyaru/Tsundere) bahwa kamu sedang membukanya/menyetelnya sekarang!]"
+
+            tag_match = re.search(r"\btag\s+(?:si\s+)?([a-zA-Z0-9_.-]+)", user_input.lower())
             join_vc_match = re.search(r"\b(masuk|join|susul)\b.*\b(voice|vc|call|discord|z|zak)\b", user_input.lower())
             leave_vc_match = re.search(r"\b(keluar|leave|putus)\b.*\b(voice|vc|call|discord)\b", user_input.lower())
 
-            if join_vc_match:
+            if tag_match:
+                is_discord_command = True
+                target_name = tag_match.group(1)
+                success, msg = discord_voice_bot.trigger_tag_user_sync(target_name)
+                
+                if success:
+                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja berhasil men-tag '{target_name}' di Discord. Beritahu Zak dengan gayamu bahwa kamu sudah memanggil orang tersebut di chat!]"
+                else:
+                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Ejek Zak karena menyuruhmu menge-tag orang yang tidak ada di server!]"
+
+            elif join_vc_match:
                 is_discord_command = True
                 success, code_or_channel, msg_or_owner = discord_voice_bot.trigger_join_from_voice()
                 if success:
@@ -461,12 +517,12 @@ def chat_processor_loop(bridge, tts_engine):
             raw_output = response.choices[0].message.content.strip()
             chat_history.append({"role": "assistant", "content": raw_output})
 
-            emotion, spoken_dialogue = extract_emotion_and_text(raw_output)
+            emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
             bridge.expression_signal.emit(emotion)
 
-            if len(spoken_dialogue) > 1:
-                bridge.subtitle_signal.emit(spoken_dialogue)
+            if len(display_dialogue) > 1:
+                bridge.subtitle_signal.emit(display_dialogue)
 
                 if pc_func:
                     threading.Thread(target=pc_func, daemon=True).start()
