@@ -5,7 +5,6 @@ import warnings
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-# DuckDuckGo Search Compatibility
 try:
   from ddgs import DDGS
 except ImportError:
@@ -14,7 +13,7 @@ except ImportError:
   except ImportError:
     DDGS = None
 
-# Gemini API Integration
+
 try:
   import google.generativeai as genai
 except ImportError:
@@ -46,9 +45,6 @@ BULAN = [
 ]
 
 
-# ==============================================================================
-# 1. TIME & DATE TOOLS
-# ==============================================================================
 def is_asking_time(text: str) -> bool:
     keywords = ["jam", "pukul", "waktu", "time", "nanji"]
     return any(k in text.lower() for k in keywords)
@@ -66,15 +62,11 @@ def is_time_query(text: str) -> bool:
     return is_asking_time(text) or is_asking_date(text) or is_asking_day(text) or text.strip().lower() == "now"
 
 
-# ==============================================================================
-# 2. WEB SEARCH TOOLS (DDGS)
-# ==============================================================================
 def needs_web_search(text: str) -> bool:
     """Mendeteksi apakah pertanyaan membutuhkan pencarian internet."""
     if is_time_query(text):
         return False
 
-    # Abaikan obrolan santai/sapaan pendek
     if len(text.strip().split()) <= 2 and not any(
         k in text.lower() for k in ["siapa", "apa itu", "harga", "skor", "who", "what"]
     ):
@@ -123,9 +115,6 @@ def search_internet(query: str, max_results: int = 3) -> str:
         return f"Gagal mengakses internet: {e}"
 
 
-# ==============================================================================
-# 3. GEMINI VISION & MULTIMODAL TOOL
-# ==============================================================================
 def analyze_image_with_gemini(
     image_path: str, prompt: str = "Jelaskan apa yang terlihat di gambar ini."
 ) -> str:
@@ -147,15 +136,11 @@ def analyze_image_with_gemini(
         return f"Gagal menganalisis gambar: {e}"
 
 
-# ==============================================================================
-# 4. SMART CONTEXT BUILDER
-# ==============================================================================
 def get_tools_context(user_input: str) -> str:
     """Menyusun konteks otomatis (Waktu/Internet) secara spesifik sesuai pertanyaan."""
     context_parts = []
     lower_input = user_input.lower().strip()
 
-    # 1. Cek Pertanyaan Waktu secara Cerdas
     if is_time_query(user_input):
         now = datetime.now()
         nama_hari = HARI[now.weekday()]
@@ -163,7 +148,6 @@ def get_tools_context(user_input: str) -> str:
         
         info_terkumpul = []
         
-        # Filter spesifik sesuai apa yang ditanyakan
         if is_asking_time(user_input):
             info_terkumpul.append(f"Jam sekarang: {now.strftime('%H:%M:%S')} WIB")
             
@@ -173,13 +157,11 @@ def get_tools_context(user_input: str) -> str:
         if is_asking_day(user_input):
             info_terkumpul.append(f"Hari ini adalah hari: {nama_hari}")
             
-        # Jika tidak spesifik (misalnya hanya nanya "now" atau "sekarang"), berikan info lengkap
         if not info_terkumpul or lower_input == "now" or lower_input == "sekarang":
             info_terkumpul = [f"Hari {nama_hari}, {now.day} {nama_bulan} {now.year}, Pukul {now.strftime('%H:%M:%S')} WIB"]
             
         context_parts.append(f"[FAKTA WAKTU REALTIME: {', '.join(info_terkumpul)}]")
 
-    # 2. Cek Kebutuhan Pencarian Internet
     elif needs_web_search(user_input):
         search_data = search_internet(user_input, max_results=2)
         if (

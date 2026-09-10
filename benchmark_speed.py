@@ -11,12 +11,10 @@ print("=" * 60)
 print("🔍 BENCHMARK KECEPATAN SETIAP KOMPONEN TUZI")
 print("=" * 60)
 
-# 1. Tes Akselerasi GPU PyTorch Applio
 print("\n[1/3] Memeriksa PyTorch & GPU...")
 check_gpu_cmd = f'"{APPLIO_PYTHON}" -c "import torch; print(\'CUDA Available:\', torch.cuda.is_available()); print(\'Device Name:\', torch.cuda.get_device_name(0) if torch.cuda.is_available() else \'HANYA CPU\')"'
 os.system(check_gpu_cmd)
 
-# 2. Tes Kecepatan Edge-TTS (Cloud)
 async def test_edge():
     t0 = time.time()
     comm = edge_tts.Communicate("Halo Zaki, ini tes kecepatan Edge TTS.", "id-ID-GadisNeural", pitch="+14Hz", rate="+5%")
@@ -25,7 +23,6 @@ async def test_edge():
 
 asyncio.run(test_edge())
 
-# 3. Tes Kecepatan Fast Zeta Server (Lokal)
 t0 = time.time()
 payload = {
     "input_path": os.path.abspath("bench_raw.wav"),

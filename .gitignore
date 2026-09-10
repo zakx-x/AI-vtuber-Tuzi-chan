@@ -15,3 +15,17 @@ Assets/model/
 /__pycache__
 /cek_model.py
 /cek_suara.py
+/llm_client.py
+/local_config.py
+/main.py
+/rvc_model.py
+/test_zeta.py
+/test_zeta_direct.py
+/test_zeta_voice.py
+/test_avatar_pygame.py
+/test_avatar.py
+/voicevox_engine.py
+/vts_client.py
+/yuki.py
+/download_sample.py
+

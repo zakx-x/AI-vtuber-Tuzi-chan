@@ -8,11 +8,8 @@
     />
     <title>Tuzi - Live2D Dimension Portal</title>
 
-    <!-- 1. Cubism 4 Core SDK -->
     <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
-    <!-- 2. PixiJS v6 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/6.5.8/browser/pixi.min.js"></script>
-    <!-- 3. Pixi Live2D Display Cubism 4 -->
     <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/cubism4.min.js"></script>
 
     <style>
@@ -212,7 +209,7 @@
           letter-spacing: 2px;
           color: #666;
         "
-        >TUZI // LIVE2D DIMENSION</span
+        >TUZI LIVE2D DIMENSION</span
       >
       <span id="device-indicator" class="device-tag">CONNECTING...</span>
     </div>
@@ -241,7 +238,7 @@
         onclick="toggleMicMute()"
         style="display: none"
       >
-        🔇 Mic: OFF (Muted)
+        Mic: OFF (Muted)
       </button>
       <button
         id="teleport-btn"
@@ -249,7 +246,7 @@
         onclick="triggerTeleport()"
         style="display: none"
       >
-        🌀 Pindahkan Tuzi ke Sini
+        Pindahkan Tuzi ke Sini
       </button>
     </div>
 
@@ -278,9 +275,6 @@
       let analyser;
       let audioSource;
 
-      // =====================================================================
-      // LIVE2D INITIALIZATION (AUTO-SWITCH MODEL PATH DOWNSCALED)
-      // =====================================================================
       async function initLive2D() {
         const canvas = document.getElementById("live2d-canvas");
 
@@ -341,9 +335,6 @@
         }
       }
 
-      // =====================================================================
-      // WAIST-UP PORTRAIT FRAMING (PAS DI TENGAH TANPA PERLU ZOOM)
-      // =====================================================================
       function resizeLive2DModel() {
         if (!currentModel || !pixiApp) return;
         const screenW = pixiApp.renderer.width;
@@ -383,9 +374,6 @@
         });
       }
 
-      // =====================================================================
-      // LIP-SYNC AUDIO MULUT
-      // =====================================================================
       function setupLipSync() {
         const player = document.getElementById("voicevox-player");
         if (audioContext) return;
@@ -424,9 +412,6 @@
         updateMouth();
       }
 
-      // =====================================================================
-      // WEBSOCKET STATE & TELEPORTASI
-      // =====================================================================
       function initWebSocket() {
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
         ws = new WebSocket(`${proto}//${location.host}/ws/${myDeviceId}`);
@@ -495,9 +480,6 @@
         );
       }
 
-      // =====================================================================
-      // KONTROL MIKROFON & AUDIO
-      // =====================================================================
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {

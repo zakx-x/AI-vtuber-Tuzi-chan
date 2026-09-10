@@ -5,7 +5,6 @@ def handle_motion_command(text: str) -> dict | None:
   """Mendeteksi perintah gerakan fisik avatar dan perpindahan layar."""
   lower = text.lower().strip()
 
-  # 1. Backflip / Salto
   if any(
       k in lower
       for k in ["backflip", "salto", "koprol", "putar badan", "muter"]
@@ -16,7 +15,6 @@ def handle_motion_command(text: str) -> dict | None:
         "reply": "Waaah! Lihat nih, Tuzi bisa backflip!",
     }
 
-  # 2. Menoleh / Mengarahkan Pandangan
   if any(
       k in lower
       for k in ["menoleh kanan", "nengok kanan", "lihat kanan", "lihat ke kanan"]
@@ -57,7 +55,6 @@ def handle_motion_command(text: str) -> dict | None:
         "reply": "Tuzi menoleh ke bawah!",
     }
 
-  # 3. Perpindahan Posisi di Layar (Window Repositioning)
   if any(
       k in lower
       for k in [
