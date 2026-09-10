@@ -6,11 +6,8 @@ import requests
 
 import config
 from local_llm_client import LocalLLMClient
-import pc_controller # <--- TAMBAHAN: Import modul kontrol PC
+import pc_controller 
 
-# ==============================================================================
-# KONFIGURASI GPT-SoVITS & AUDIO
-# ==============================================================================
 GPTSOVITS_API_URL = getattr(config, "GPTSOVITS_API_URL", "http://127.0.0.1:9880/tts")
 REF_AUDIO_PATH = getattr(config, "REF_AUDIO_PATH", "Reference Audios/sample_zeta.wav")
 REF_AUDIO_TEXT = getattr(config, "REF_AUDIO_TEXT", "Halo semuanya, namaku Vestia Zeta!")
@@ -62,7 +59,6 @@ def generate_and_play_voice(text: str):
             with open(temp_wav, "wb") as f:
                 f.write(res.content)
             
-            # Memutar audio ke speaker laptop / PC
             winsound.PlaySound(temp_wav, winsound.SND_FILENAME)
         else:
             print(f"\n[TTS Error] Status: {res.status_code}")
@@ -92,19 +88,12 @@ def main():
                 generate_and_play_voice("Sampai jumpa lagi!")
                 break
                 
-            # ==========================================================
-            # TAMBAHAN: DETEKSI & EKSEKUSI PERINTAH PC SEBELUM LLM BERPIKIR
-            # ==========================================================
             pc_action = pc_controller.handle_pc_action(user_input)
             
             if pc_action:
                 print(f"[Sistem] ⚙️ Mengeksekusi: {pc_action}")
                 # Menyisipkan info agar LLM tahu aksinya sudah dilakukan
                 user_input += f"\n\n[SISTEM INFO: Kamu baru saja mengeksekusi perintah Zaki yaitu: '{pc_action}'. Balas perintahnya dengan gayamu yang sedikit Tsundere/blak-blakan, beri tahu dia bahwa kamu sudah membukanya!]"
-
-            # ==========================================================
-            # PROMPT LLM
-            # ==========================================================
             prompt = f"""[ROLEPLAY: TUZI]
 Kamu adalah Tuzi, asisten AI pribadi yang santai, cerdas, ramah, dan sedikit blak-blakan.
 Jawab pesan user dengan singkat, padat, dan natural saat diucapkan. DILARANG menggunakan emoji.

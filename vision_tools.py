@@ -16,7 +16,6 @@ except Exception:
 def capture_screen_image():
   """Mengambil screenshot layar dan memperkecil ukurannya untuk kecepatan analisis."""
   screenshot = ImageGrab.grab()
-  # Resize proporsional agar hemat token dan respons instan
   screenshot.thumbnail((1280, 720))
   return screenshot
 

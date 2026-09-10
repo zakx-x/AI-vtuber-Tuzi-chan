@@ -4,11 +4,8 @@ import urllib.parse
 import webbrowser
 
 def extract_search_target(text: str) -> str:
-    # 1. Bersihkan awalan obrolan (Indo & Eng)
     cleaned = re.sub(r"^(tuzi|halo tuzi|hi tuzi|eh tuzi|tolong|coba|can you|can u|please|hey)\s+", "", text, flags=re.IGNORECASE).strip()
     
-    # 2. Tangkap kata SETELAH perintah pencarian utama
-    # Ini akan memastikan kata "search" atau "play" dilewati, dan hanya mengambil targetnya
     match = re.search(r"(?:cari|cariin|carikan|putar|putarkan|setel|setelkan|mainkan|tonton|search|search for|play|find|look up)\s+(?:lagu|video|tentang|berita|for)?\s*(.*)", cleaned, flags=re.IGNORECASE)
     
     if match:
@@ -16,7 +13,6 @@ def extract_search_target(text: str) -> str:
     else:
         target = cleaned
 
-    # 3. Hapus kata-kata pengisi (filler) yang mungkin masih tertinggal di dalam teks
     filler_patterns = [
         r"\bbisakah\b", r"\bbisa\b", r"\bdong\b", r"\byah\b", r"\bya\b", r"\bnih\b", r"\baja\b", r"\bsih\b",
         r"\byoutube\b", r"\byt\b", r"\bspotify\b", r"\btiktok\b", r"\binstagram\b", r"\big\b",
@@ -28,7 +24,6 @@ def extract_search_target(text: str) -> str:
     pattern = "|".join(filler_patterns)
     final_target = re.sub(pattern, "", target, flags=re.IGNORECASE)
     
-    # Hapus sisa spasi berlebih akibat pemotongan kata
     return re.sub(r"\s+", " ", final_target).strip()
 
 def play_spotify(song_name: str):
@@ -95,7 +90,6 @@ def launch_app(app_name: str):
 def handle_pc_action(text: str):
     lower = text.lower().strip()
     
-    # Deteksi yt (karena sebelumnya kamu mengetik 'yt' bukan 'youtube')
     if "youtube" in lower or "yt" in lower:
         return open_youtube(lower)
     if "tiktok" in lower:

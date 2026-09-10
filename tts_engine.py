@@ -31,10 +31,8 @@ class TTSEngine:
       if len(samples) == 0:
         return
 
-      # Putar audio
       sd.play(samples, samplerate=samplerate)
 
-      # Sinkronisasi parameter mulut secara real-time
       frame_duration = 1 / 30
       chunk_size = int(samplerate * frame_duration)
 

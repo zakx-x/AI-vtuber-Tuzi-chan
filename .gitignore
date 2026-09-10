@@ -28,4 +28,9 @@ Assets/model/
 /vts_client.py
 /yuki.py
 /download_sample.py
+/smart_tts.py
+/server_hub.py
+/setup_local_tts.py
+/local_llm_client.py
+/rvc_tts_engine.py
 
