@@ -1,2 +1,2 @@
-she can controller ur pc n other stuff 
+she can control ur pc n other stuff 
 voice models by ElevenLabs
