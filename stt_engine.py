@@ -14,7 +14,7 @@ class STTEngine:
 
     def listen_voice(self):
         with sr.Microphone() as source:
-            print("\n[🎙️] Mendengarkan...")
+            #print("\n[🎙️] Mendengarkan...")
             self.recognizer.adjust_for_ambient_noise(source, duration=0.2)
             try:
                 audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
