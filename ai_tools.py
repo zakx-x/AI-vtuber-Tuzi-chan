@@ -1,7 +1,9 @@
 from datetime import datetime
 import os
+from pydoc import text
 import re
 import warnings
+from duckduckgo_search import DDGS
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -174,3 +176,23 @@ def get_tools_context(user_input: str) -> str:
             )
 
     return "\n".join(context_parts)
+
+def get_tools_context(user_input: str):
+    text = user_input.lower()
+    
+    trigger_words = [
+        "siapa", "apa itu", "berita", "terbaru", "cari tahu", "bagaimana",
+        "who", "what", "news", "latest", "search", "how to", "tell me about",
+        ]
+    
+    if any(word in text for word in trigger_words):
+        print(f"\nsedang membaca artikel web untuk: '{user_input}'...")
+        try:
+            results = DDGS().text(user_input, max_results=2)
+            if results:
+                scraped_info = " ".join([res['body'] for res in results])
+                return f"[SISTEM INFO BANTUAN: Ini adalah hasil pencarian internet terbaru: {scraped_info}. Jawab pertanyaan Zak dengan gayamu sendiri berdasarkan fakta ini!]"
+        except Exception as e:
+            print(f"[Sistem Internet Error] {e}")
+            
+    return None
