@@ -1,19 +1,23 @@
 import cv2
 import face_recognition
 import numpy as np
+import os
 
 def buka_mata_tuzi():
     known_face_encodings = []
     known_face_names = []
+    
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+    image_path = os.path.join(CURRENT_DIR, "zak.jpg")
 
     try:
-        zak_image = face_recognition.load_image_file("zak.jpg")
+        zak_image = face_recognition.load_image_file(image_path)
         zak_face_encoding = face_recognition.face_encodings(zak_image)[0]
         known_face_encodings.append(zak_face_encoding)
         known_face_names.append("ZAK")
         print("\n[Tuzi Vision]: Memori visual ZAK berhasil dimuat.")
-    except:
-        print("\n[Tuzi Vision]: File 'zak.jpg' tidak ditemukan! Pastikan foto berada di folder yang sama.")
+    except Exception as e:
+        print(f"\n[Tuzi Vision]: Gagal memuat zak.jpg! Error: {e}")
 
     video_capture = cv2.VideoCapture(0)
     print("[Tuzi Vision]: Aktif. Tekan 't' untuk mengajari Tuzi. Tekan 'q' untuk keluar.")

@@ -40,7 +40,7 @@ import avatar_motion
 import config
 import discord_voice_bot
 import pc_controller
-import tuzi_vision
+from Assets.face import tuzi_vision
 from stt_engine import STTEngine
 from groq import Groq
 
@@ -75,6 +75,7 @@ class AvatarSignalBridge(QObject):
     action_signal = pyqtSignal(str)
     subtitle_signal = pyqtSignal(str)
     expression_signal = pyqtSignal(str)
+    timer_signal = pyqtSignal(int) # SIGNAL BARU UNTUK UI TIMER
 
 class TransparentAvatarWindow(QMainWindow):
     def __init__(self, bridge):
@@ -108,6 +109,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.bridge.action_signal.connect(self.execute_motion_action)
         self.bridge.subtitle_signal.connect(self.update_subtitle_in_web)
         self.bridge.expression_signal.connect(self.update_expression_in_web)
+        self.bridge.timer_signal.connect(self.update_timer_in_web) # KONEKSIKAN SIGNAL
 
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
@@ -198,6 +200,11 @@ class TransparentAvatarWindow(QMainWindow):
     def update_subtitle_in_web(self, html_content: str):
         escaped = json.dumps(html_content)
         self.webview.page().runJavaScript(f"if(window.setSubtitle) setSubtitle({escaped});")
+
+    @pyqtSlot(int)
+    def update_timer_in_web(self, seconds: int):
+        # PICU SCRIPT COUNTDOWN JS DI INDEX.HTML
+        self.webview.page().runJavaScript(f"if(window.startTimerUI) startTimerUI({seconds});")
 
     @pyqtSlot(str)
     def smooth_move_to(self, target: str):
@@ -405,6 +412,20 @@ def mic_input_loop(stt):
             print(f"\n[Mic Error] Gagal merekam audio: {e}")
             time.sleep(5)
 
+
+# EKSEKUTOR TIMER DI LATAR BELAKANG
+def jalankan_timer_tuzi(total_detik):
+    time.sleep(total_detik)
+    
+    menit = total_detik // 60
+    detik = total_detik % 60
+    teks_waktu = f"{menit} menit {detik} detik" if menit > 0 else f"{detik} detik"
+    
+    # Masukkan paksa ke antrean input seolah-olah sistem yang bicara ke Tuzi
+    pesan_kejutan = f"\n\n[SISTEM INFO: Waktu timer selama {teks_waktu} BARU SAJA HABIS! Beritahu Zak sekarang juga dengan gaya heboh/panik bahwa waktunya sudah selesai!]"
+    input_queue.put(pesan_kejutan)
+
+
 def chat_processor_loop(bridge, tts_engine):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -414,6 +435,7 @@ def chat_processor_loop(bridge, tts_engine):
     print("TUZI AI READY (Groq Qwen Brain + ElevenLabs Voice Mode)")
     print("=" * 65 + "\n")
 
+    # UPDATE SYSTEM PROMPT DENGAN ATURAN TIMER
     system_prompt = (
         "Kamu adalah Tuzi, pendamping virtual milik Zak (atau Jak). Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
         "=== KEPRIBADIAN MULTI-FASE ===\n"
@@ -431,9 +453,10 @@ def chat_processor_loop(bridge, tts_engine):
         "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:excited], [EMO:angry], [EMO:soft] (saat manis/malu), atau [EMO:natural].\n"
         "2. Manipulasi intonasi TTS: Gunakan titik tiga (...) untuk nada lembut/malu. Gunakan huruf kecil untuk nada tenang.\n"
         "3. DILARANG menggunakan emoji visual apa pun dalam balasanmu.\n\n"
-        "=== KONTROL APLIKASI PC & KAMERA ===\n"
+        "=== KONTROL APLIKASI PC, KAMERA & TIMER ===\n"
         "1. Jika Zak menyuruhmu memutar lagu berdasarkan konteks obrolan (contoh: 'play the song', 'putar lagu itu'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
-        "2. Jika Zak memintamu melihat layar, membuka mata, atau menyalakan kamera (contoh: 'buka vision', 'can i see ur vision', 'show me ur vision', 'lihat aku'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [OPEN_VISION]."
+        "2. Jika Zak memintamu melihat layar, membuka mata, atau menyalakan kamera (contoh: 'buka vision', 'can i see ur vision'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [OPEN_VISION].\n"
+        "3. Jika Zak memintamu menghitung mundur atau memasang timer (contoh: 'hitung mundur 10 menit', 'set timer 30 detik'), hitung total waktunya ke dalam satuan DETIK, lalu WAJIB tambahkan tag ini di akhir balasanmu: [SET_TIMER: total_detik]. (Contoh set 5 menit: [SET_TIMER: 300])."
     )
 
     chat_history = [{"role": "system", "content": system_prompt}]
@@ -527,6 +550,17 @@ def chat_processor_loop(bridge, tts_engine):
             vision_cmd = re.search(r"\[OPEN_VISION\]", raw_output, flags=re.IGNORECASE)
             if vision_cmd:
                 pc_func = tuzi_vision.buka_mata_tuzi
+
+            # TANGKAP PERINTAH TIMER DARI Teks GROQ
+            timer_cmd = re.search(r"\[SET_TIMER:\s*(\d+)\]", raw_output, flags=re.IGNORECASE)
+            if timer_cmd:
+                total_detik = int(timer_cmd.group(1))
+                
+                # Kirim ke JS agar UI Timer muncul di layar
+                bridge.timer_signal.emit(total_detik)
+                
+                # Luncurkan thread background agar sistem Python ikut menghitung dan tidak freeze
+                threading.Thread(target=jalankan_timer_tuzi, args=(total_detik,), daemon=True).start()
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
