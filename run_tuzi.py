@@ -40,6 +40,7 @@ import avatar_motion
 import config
 import discord_voice_bot
 import pc_controller
+import tuzi_vision
 from stt_engine import STTEngine
 from groq import Groq
 
@@ -430,9 +431,9 @@ def chat_processor_loop(bridge, tts_engine):
         "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:excited], [EMO:angry], [EMO:soft] (saat manis/malu), atau [EMO:natural].\n"
         "2. Manipulasi intonasi TTS: Gunakan titik tiga (...) untuk nada lembut/malu. Gunakan huruf kecil untuk nada tenang.\n"
         "3. DILARANG menggunakan emoji visual apa pun dalam balasanmu.\n\n"
-        "=== KONTROL APLIKASI PC ===\n"
-        "Jika Zak menyuruhmu memutar lagu berdasarkan konteks obrolan (contoh: 'play the song', 'putar lagu itu'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
-        "Contoh balasan: [EMO:excited] Sure Zak, let's listen to it! [PLAY_SPOTIFY: Not Like Us - Kendrick Lamar]"
+        "=== KONTROL APLIKASI PC & KAMERA ===\n"
+        "1. Jika Zak menyuruhmu memutar lagu berdasarkan konteks obrolan (contoh: 'play the song', 'putar lagu itu'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
+        "2. Jika Zak memintamu melihat layar, membuka mata, atau menyalakan kamera (contoh: 'buka vision', 'can i see ur vision', 'show me ur vision', 'lihat aku'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [OPEN_VISION]."
     )
 
     chat_history = [{"role": "system", "content": system_prompt}]
@@ -522,6 +523,10 @@ def chat_processor_loop(bridge, tts_engine):
             if spotify_cmd:
                 song_to_play = spotify_cmd.group(1)
                 pc_func = pc_controller.play_spotify_direct(song_to_play)
+
+            vision_cmd = re.search(r"\[OPEN_VISION\]", raw_output, flags=re.IGNORECASE)
+            if vision_cmd:
+                pc_func = tuzi_vision.buka_mata_tuzi
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
