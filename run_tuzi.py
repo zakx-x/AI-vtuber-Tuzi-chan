@@ -114,7 +114,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
         
-        self.resize(400, 1300)
+        self.resize(600, 1300)
 
         screen_geo = QApplication.primaryScreen().geometry()
         w, h = self.width(), self.height()
@@ -432,7 +432,6 @@ def chat_processor_loop(bridge, tts_engine):
     print("TUZI AI READY (Groq Qwen Brain + ElevenLabs Voice Mode)")
     print("=" * 65 + "\n")
 
-    # UPDATE SYSTEM PROMPT DENGAN ATURAN TIMER
     system_prompt = (
         "Kamu adalah Tuzi, pendamping virtual milik Zak (atau Jak). Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
         "=== KEPRIBADIAN MULTI-FASE ===\n"
