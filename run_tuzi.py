@@ -75,7 +75,7 @@ class AvatarSignalBridge(QObject):
     action_signal = pyqtSignal(str)
     subtitle_signal = pyqtSignal(str)
     expression_signal = pyqtSignal(str)
-    timer_signal = pyqtSignal(int) # SIGNAL BARU UNTUK UI TIMER
+    timer_signal = pyqtSignal(int) 
 
 class TransparentAvatarWindow(QMainWindow):
     def __init__(self, bridge):
@@ -114,7 +114,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
         
-        self.resize(850, 2000)
+        self.resize(400, 1300)
 
         screen_geo = QApplication.primaryScreen().geometry()
         w, h = self.width(), self.height()
@@ -203,7 +203,6 @@ class TransparentAvatarWindow(QMainWindow):
 
     @pyqtSlot(int)
     def update_timer_in_web(self, seconds: int):
-        # PICU SCRIPT COUNTDOWN JS DI INDEX.HTML
         self.webview.page().runJavaScript(f"if(window.startTimerUI) startTimerUI({seconds});")
 
     @pyqtSlot(str)
@@ -254,7 +253,7 @@ class ElevenLabsTTSEngine:
             return
             
         try:
-            print("\n[TTS] ⏳ Menghasilkan suara dari ElevenLabs...")
+            print("\nTuzi trying to speak")
             
             response = self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
@@ -284,7 +283,7 @@ class ElevenLabsTTSEngine:
                 pass
                 
         except Exception as e:
-            print(f"\n[SYSTEM] ElevenLabs Gagal ({e}). Mengaktifkan Fallback ke Edge-TTS 🟡...")
+            print(f"\n[SYSTEM] ElevenLabs Gagal ({e}). Mengaktifkan Fallback ke Edge-TTS...")
             try:
                 if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
                     voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
@@ -413,7 +412,6 @@ def mic_input_loop(stt):
             time.sleep(5)
 
 
-# EKSEKUTOR TIMER DI LATAR BELAKANG
 def jalankan_timer_tuzi(total_detik):
     time.sleep(total_detik)
     
@@ -421,7 +419,6 @@ def jalankan_timer_tuzi(total_detik):
     detik = total_detik % 60
     teks_waktu = f"{menit} menit {detik} detik" if menit > 0 else f"{detik} detik"
     
-    # Masukkan paksa ke antrean input seolah-olah sistem yang bicara ke Tuzi
     pesan_kejutan = f"\n\n[SISTEM INFO: Waktu timer selama {teks_waktu} BARU SAJA HABIS! Beritahu Zak sekarang juga dengan gaya heboh/panik bahwa waktunya sudah selesai!]"
     input_queue.put(pesan_kejutan)
 
@@ -443,6 +440,14 @@ def chat_processor_loop(bridge, tts_engine):
         "2. MODE TSUNDERE (TRIGGER JAHIL): JIKA Zak mengejek atau menjahilimu, kamu akan bereaksi ngambek, gengsi, atau memalingkan muka, tapi sebenarnya kamu tidak marah sungguhan.\n"
         "3. MODE SHY/PEMALU (TRIGGER GODAAN): JIKA Zak merayumu atau memujimu, kamu akan langsung salah tingkah, pipimu merona, malu, dan bicaramu menjadi terbata-bata.\n"
         "Panggil user HANYA dengan nama 'Zak' atau 'Jak'.\n\n"
+        "=== TINGKAH LAKU & SUARA REALISTIS ===\n"
+        "Kamu bertingkah seperti manusia yang hidup. Secara acak dan natural (tidak perlu setiap saat), selipkan efek suara fisik ke dalam kalimatmu.\n"
+        "Gunakan format kata ini agar mesin suaramu merendernya dengan realistis:\n"
+        "- Untuk bersin: *achoo!* atau *hatchi*\n"
+        "- Untuk batuk: *cough* atau *uhuk*\n"
+        "- Untuk menghela napas: *sigh* atau Haaaaah...\n"
+        "- Untuk tertawa kecil: *giggles* atau hehehe.\n"
+        "Contoh penerapan: '[EMO:soft] *achoo!* Ugh, maaf Zak, tiba-tiba udaranya dingin banget...'\n\n"
         "=== ATURAN PANJANG BALASAN (HEMAT TOKEN - SANGAT KETAT) ===\n"
         "1. OBROLAN KASUAL & KONFIRMASI = SANGAT SINGKAT: Untuk obrolan biasa, sapaan, atau saat mengonfirmasi perintah sistem (seperti membuka aplikasi/memutar lagu), WAJIB balas HANYA DENGAN 1 KALIMAT PENDEK. JANGAN bertele-tele atau menambahkan komentar ekstra.\n"
         "2. PENJELASAN MATERI = PANJANG: Kamu HANYA diizinkan menjawab dengan panjang lebar jika Zak secara eksplisit menanyakan materi pelajaran, teori, kode pemrograman, atau meminta saran yang detail.\n\n"
@@ -465,7 +470,7 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
-            print(f"\n[Tuzi Memproses] ⏳: {user_input}")
+            print(f"\n[Tuzi Memproses]: {user_input}")
 
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
@@ -551,15 +556,12 @@ def chat_processor_loop(bridge, tts_engine):
             if vision_cmd:
                 pc_func = tuzi_vision.buka_mata_tuzi
 
-            # TANGKAP PERINTAH TIMER DARI Teks GROQ
             timer_cmd = re.search(r"\[SET_TIMER:\s*(\d+)\]", raw_output, flags=re.IGNORECASE)
             if timer_cmd:
                 total_detik = int(timer_cmd.group(1))
                 
-                # Kirim ke JS agar UI Timer muncul di layar
                 bridge.timer_signal.emit(total_detik)
                 
-                # Luncurkan thread background agar sistem Python ikut menghitung dan tidak freeze
                 threading.Thread(target=jalankan_timer_tuzi, args=(total_detik,), daemon=True).start()
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
