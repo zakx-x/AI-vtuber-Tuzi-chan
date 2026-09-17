@@ -26,8 +26,8 @@ class STTEngine:
                 with open(tmp_path, "rb") as audio_file:
                     transcription = self.groq_client.audio.transcriptions.create(
                         file=(tmp_path, audio_file.read()),
-                        model="whisper-large-v3",
-                        prompt="Tuzi, Zak, Jak.",
+                        model="whisper-large-v3-turbo",
+                        prompt="Tuzi, Zak, Jak. The audio may contain English with a strong Indonesian accent, or mixed Indonesian and English.",
                         response_format="text"
                     )
                 

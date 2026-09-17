@@ -36,11 +36,11 @@ from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
 from PyQt5.QtWidgets import QApplication, QMainWindow
 
 import ai_tools
+import screen_vision
 import avatar_motion
 import config
 import discord_voice_bot
 import pc_controller
-from Assets.face import tuzi_vision
 from stt_engine import STTEngine
 from groq import Groq
 
@@ -109,7 +109,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.bridge.action_signal.connect(self.execute_motion_action)
         self.bridge.subtitle_signal.connect(self.update_subtitle_in_web)
         self.bridge.expression_signal.connect(self.update_expression_in_web)
-        self.bridge.timer_signal.connect(self.update_timer_in_web) # KONEKSIKAN SIGNAL
+        self.bridge.timer_signal.connect(self.update_timer_in_web) 
 
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
@@ -343,46 +343,42 @@ def extract_emotion_and_text(raw_text: str) -> tuple[str, str, str]:
 
     spoken_text = display_text
     
+    sfx_to_phonetic = {
+        r"\*giggles?\*": "hehehe...",
+        r"\*sigh\*": "haaaah...",
+        r"\*cough\*": "uhukk...",
+        r"\*achoo\*": "hatchii...",
+        r"\*smiles?\*": "",  
+        r"\*nods?\*": ""
+    }
+
+    for action, phonetic in sfx_to_phonetic.items():
+        spoken_text = re.sub(action, phonetic, spoken_text, flags=re.IGNORECASE)
+        
+    spoken_text = re.sub(r"\*.*?\*", "", spoken_text)
+    
     tts_dictionary = {
         r"\be-eh\b": "eehh", r"\bu-umm\b": "uuumm", r"\ba-anu\b": "aa-nuu",
         r"\be-hehe\b": "ehehhe", r"\bm-maaf\b": "mmaaff", r"\bcih\b": "tcihh",
         r"\bck\b": "tck", r"\bhaha\b": "hahaha", r"\bhehe\b": "hehhe",
         r"\bdih\b": "dihh", r"\bgrr\b": "grrr",
         
-        r"\bfr\b": "for real",
-        r"\bfrfr\b": "for real for real",
-        r"\bong\b": "on god",
-        r"\bngl\b": "not gonna lie",
-        r"\btbh\b": "to be honest",
-        r"\bidk\b": "i don't know",
-        r"\bwtf\b": "what the fuck",
-        r"\blmao\b": "la mao", 
-        r"\baf\b": "as fuck",
-        r"\brn\b": "right now",
-        r"\bbrb\b": "be right back",
-        r"\bbtw\b": "by the way",
-        r"\bomg\b": "oh my god",
-        r"\bwdym\b": "what do you mean",
-        r"\bjk\b": "just kidding",
-        r"\bnvm\b": "nevermind",
+        r"\bfr\b": "for real", r"\bfrfr\b": "for real for real",
+        r"\bong\b": "on god", r"\bngl\b": "not gonna lie",
+        r"\btbh\b": "to be honest", r"\bidk\b": "i don't know",
+        r"\bwtf\b": "what the fuck", r"\blmao\b": "la mao", 
+        r"\baf\b": "as fuck", r"\brn\b": "right now",
+        r"\bbrb\b": "be right back", r"\bbtw\b": "by the way",
+        r"\bomg\b": "oh my god", r"\bwdym\b": "what do you mean",
+        r"\bjk\b": "just kidding", r"\bnvm\b": "nevermind",
         
-        r"\byg\b": "yang",
-        r"\bgw\b": "gue",
-        r"\blu\b": "elu",
-        r"\bbgt\b": "banget",
-        r"\btp\b": "tapi",
-        r"\bjd\b": "jadi",
-        r"\bkalo\b": "kalau",
-        r"\bpls\b": "please",
-        r"\baja\b": "saja",
-        r"\bjg\b": "juga",
-        r"\banj\b": "anjay",
-        r"\bdgn\b": "dengan",
-        r"\bkrn\b": "karena",
-        r"\bsbb\b": "sorry baru balas",
+        r"\byg\b": "yang", r"\bgw\b": "gue", r"\blu\b": "elu",
+        r"\bbgt\b": "banget", r"\btp\b": "tapi", r"\bjd\b": "jadi",
+        r"\bkalo\b": "kalau", r"\bpls\b": "please", r"\baja\b": "saja",
+        r"\bjg\b": "juga", r"\banj\b": "anjay", r"\bdgn\b": "dengan",
+        r"\bkrn\b": "karena", r"\bsbb\b": "sorry baru balas",
         
-        r"\bwww+\b": "kusa",
-        r"\bmjk\b": "majika",
+        r"\bwww+\b": "kusa", r"\bmjk\b": "majika",
     }
 
     for word, phonetic in tts_dictionary.items():
@@ -405,7 +401,7 @@ def mic_input_loop(stt):
         try:
             text = stt.listen_voice()
             if text:
-                print(f"\n[Mic Heard] 🎙️: {text}")
+                print(f"\n[Mic Heard] : {text}")
                 input_queue.put(text)
         except Exception as e:
             print(f"\n[Mic Error] Gagal merekam audio: {e}")
@@ -442,11 +438,11 @@ def chat_processor_loop(bridge, tts_engine):
         "=== TINGKAH LAKU & SUARA REALISTIS ===\n"
         "Kamu bertingkah seperti manusia yang hidup. Secara acak dan natural (tidak perlu setiap saat), selipkan efek suara fisik ke dalam kalimatmu.\n"
         "Gunakan format kata ini agar mesin suaramu merendernya dengan realistis:\n"
-        "- Untuk bersin: *achoo!* atau *hatchi*\n"
-        "- Untuk batuk: *cough* atau *uhuk*\n"
-        "- Untuk menghela napas: *sigh* atau Haaaaah...\n"
-        "- Untuk tertawa kecil: *giggles* atau hehehe.\n"
-        "Contoh penerapan: '[EMO:soft] *achoo!* Ugh, maaf Zak, tiba-tiba udaranya dingin banget...'\n\n"
+        "- Untuk bersin: *achoo!*\n"
+        "- Untuk batuk: *cough!*\n"
+        "- Untuk menghela napas: *sigh*\n"
+        "- Untuk tertawa kecil: *giggles*\n"
+        "Contoh penerapan: '[EMO:soft] *achoo* Ugh, maaf Zak, tiba-tiba udaranya dingin banget...'\n\n"
         "=== ATURAN PANJANG BALASAN (HEMAT TOKEN - SANGAT KETAT) ===\n"
         "1. OBROLAN KASUAL & KONFIRMASI = SANGAT SINGKAT: Untuk obrolan biasa, sapaan, atau saat mengonfirmasi perintah sistem (seperti membuka aplikasi/memutar lagu), WAJIB balas HANYA DENGAN 1 KALIMAT PENDEK. JANGAN bertele-tele atau menambahkan komentar ekstra.\n"
         "2. PENJELASAN MATERI = PANJANG: Kamu HANYA diizinkan menjawab dengan panjang lebar jika Zak secara eksplisit menanyakan materi pelajaran, teori, kode pemrograman, atau meminta saran yang detail.\n\n"
@@ -507,25 +503,25 @@ def chat_processor_loop(bridge, tts_engine):
                 success, msg = discord_voice_bot.trigger_tag_user_sync(target_name)
                 
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja berhasil men-tag '{target_name}' di Discord. Beritahu Zak dengan gayamu bahwa kamu sudah memanggil orang tersebut di chat!]"
+                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja berhasil men-tag '{target_name}' di Discord. Beritahu Zak dengan nada manis dan lembut (Deredere) bahwa kamu sudah memanggil orang tersebut di chat!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Ejek Zak karena menyuruhmu menge-tag orang yang tidak ada di server!]"
+                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Beritahu Zak dengan lembut bahwa kamu tidak bisa menemukan orang tersebut di server.]"
 
             elif join_vc_match:
                 is_discord_command = True
                 success, code_or_channel, msg_or_owner = discord_voice_bot.trigger_join_from_voice()
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu berhasil menyusul Zaki (z) ke Voice Channel '{code_or_channel}'. Sapa dia dengan nada Tsundere/sassy, tunjukkan kalau kamu repot-repot datang ke VC demi dia!]"
+                    user_input += f"\n\n[SISTEM INFO: Kamu berhasil menyusul Zaki (Zak) ke Voice Channel '{code_or_channel}'. Sapa dia dengan nada manis dan lembut (Deredere), tunjukkan kalau kamu sangat senang bisa menyusulnya ke VC!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}. Marahi si Z karena menyuruhmu menyusul tapi dia sendiri belum masuk ke Voice Channel mana pun!]"
+                    user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}. Beritahu Zak dengan nada lembut/sedih bahwa kamu tidak bisa menyusul karena dia belum masuk ke Voice Channel mana pun.]"
             
             elif leave_vc_match:
                 is_discord_command = True
                 success = discord_voice_bot.trigger_leave_from_voice()
                 if success:
-                    user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan ala Tsundere/angkuh kepada Zaki!]"
+                    user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan yang manis dan lembut kepada Zak!]"
                 else:
-                    user_input += "\n\n[SISTEM INFO: Zaki menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Ejek dia karena pikun!]"
+                    user_input += "\n\n[SISTEM INFO: Zak menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Beritahu Zak dengan manis bahwa kamu memang tidak sedang di dalam VC.]"
 
             tool_context = ai_tools.get_tools_context(user_input)
             if tool_context:
@@ -536,14 +532,21 @@ def chat_processor_loop(bridge, tts_engine):
             if len(chat_history) > 15:
                 chat_history = [chat_history[0]] + chat_history[-14:]
 
-            response = groq_client.chat.completions.create(
-                model="qwen/qwen3.8-27b",
-                messages=chat_history,
-                temperature=0.88,
-                max_tokens=150
-            )
-            
-            raw_output = response.choices[0].message.content.strip()
+            kata_kunci_vision = ["lihat layar", "lihat ini", "baca ini", "yang mana", "di monitor", "screen", "layarku"]
+            is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
+
+            if is_vision_triggered:
+                print("[Sistem] Memicu Tuzi Vision (Screen)...")
+                raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input)
+            else:
+                response = groq_client.chat.completions.create(
+                    model="qwen/qwen3.8-27b",
+                    messages=chat_history,
+                    temperature=0.88,
+                    max_tokens=150
+                )
+                raw_output = response.choices[0].message.content.strip()
+                
             chat_history.append({"role": "assistant", "content": raw_output})
 
             spotify_cmd = re.search(r"\[PLAY_SPOTIFY:\s*(.+?)\]", raw_output, flags=re.IGNORECASE)
@@ -553,7 +556,7 @@ def chat_processor_loop(bridge, tts_engine):
 
             vision_cmd = re.search(r"\[OPEN_VISION\]", raw_output, flags=re.IGNORECASE)
             if vision_cmd:
-                pc_func = tuzi_vision.buka_mata_tuzi
+                print("[Info] Fitur Kamera Vision sedang dinonaktifkan sementara.")
 
             timer_cmd = re.search(r"\[SET_TIMER:\s*(\d+)\]", raw_output, flags=re.IGNORECASE)
             if timer_cmd:
@@ -599,7 +602,7 @@ if __name__ == "__main__":
     window.show()
 
     tts = ElevenLabsTTSEngine(bridge)
-    stt = STTEngine(language="id-ID")
+    stt = STTEngine()
 
     discord_thread = threading.Thread(
         target=discord_voice_bot.start_discord_bot_thread, daemon=True

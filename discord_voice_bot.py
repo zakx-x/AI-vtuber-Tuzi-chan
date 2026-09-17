@@ -141,7 +141,7 @@ def generate_llm_reply_sync(prompt: str) -> str:
             return re.sub(r"\[.*?\]", "", raw).strip()
         except Exception:
             pass
-    return "Apaan sih."
+    return "Maaf, aku kurang mengerti."
 
 def detect_language(text: str) -> str:
     if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
@@ -372,7 +372,7 @@ async def process_and_speak_vc(user, user_text: str):
     
     if any(k in lower_text for k in ["ngomong bahasa inggris", "speak english", "pakai bahasa inggris"]):
         _locked_language = "en"
-        reply_msg = "Fine, I will speak English from now on! Don't expect me to be nice though!"
+        reply_msg = "Okay, I will speak English for you! I hope you like it."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -381,7 +381,7 @@ async def process_and_speak_vc(user, user_text: str):
         
     if any(k in lower_text for k in ["ngomong bahasa jepang", "speak japanese", "pakai bahasa jepang"]):
         _locked_language = "ja"
-        reply_msg = "Cih, wakatta wa yo! Nihongo de hanashite ageru."
+        reply_msg = "Hai, wakatta wa! Nihongo de hanashimasu ne."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -390,7 +390,7 @@ async def process_and_speak_vc(user, user_text: str):
         
     if any(k in lower_text for k in ["kembali ke indonesia", "bahasa indonesia", "bahasa otomatis", "auto language"]):
         _locked_language = None
-        reply_msg = "Hmph! Yaudah, aku balik pakai bahasa biasa lagi."
+        reply_msg = "Hehe, baiklah! Aku kembali pakai bahasa biasa ya."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -421,17 +421,17 @@ async def process_and_speak_vc(user, user_text: str):
         current_lang = detect_language(user_text)
         
     if current_lang == "en":
-        prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER IN VC]\nYou are Tuzi, a Tsundere in a Discord Voice Channel. You are sassy, sarcastic, and blunt.\nUser ({user.display_name}) said: \"{user_text}\"\nRULES:\n1. Reply entirely in ENGLISH. Keep it short, punchy, and natural.\n2. If they are toxic, roast them back frontally.\n3. NO emojis."
+        prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet, gentle, and caring virtual companion. Default mode: Deredere. If teased: Tsundere. If praised: Shy.\nUser ({user.display_name}) said: \"{user_text}\"\nRULES:\n1. Reply entirely in ENGLISH. Keep it short and natural.\n2. Do NOT use emojis.\n3. You can use sound tags like *giggles* or *sigh* naturally."
     elif current_lang == "ja":
-        prompt = f"[ROLEPLAY: ツンデレ Discord VC]\nあなたはDiscordのVCにいるTuziです。ツンデレで、生意気で、皮肉屋です。\nユーザー ({user.display_name}) の発言: \"{user_text}\"\nルール:\n1. すべて日本語で返信してください。短く、自然な会話体で。\n2. 煽られたら、容赦なく言い返してください。\n3. 絵文字禁止。"
+        prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しく、愛情深いバーチャルコンパニオンです。基本はデレデレ、からかわれたらツンデレ、褒められたら照れます。\nユーザー ({user.display_name}) の発言: \"{user_text}\"\nルール:\n1. すべて日本語で短く自然に返信してください。\n2. 絵文字は禁止です。\n3. *giggles* などの音タグを使っても構いません。"
     else:
-        prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER IN VC]\nKamu adalah Tuzi di Voice Channel Discord. Karaktermu santai, savage, Tsundere, dan blak-blakan tanpa sensor.\nPengguna ({user.display_name}) berkata: \"{user_text}\"\nATURAN:\n1. Balas dengan bahasa INDONESIA gaul. Kalimat pendek yang langsung ke inti.\n2. Jika dia toxic, balas roasting secara frontal.\n3. DILARANG memakai emoji."
+        prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang sangat manis, lembut, dan perhatian (Deredere). Jika diejek, kamu bereaksi ngambek (Tsundere). Jika digoda, kamu jadi malu.\nPengguna ({user.display_name}) berkata: \"{user_text}\"\nATURAN:\n1. Balas dengan bahasa INDONESIA gaul yang santai. Kalimat pendek.\n2. DILARANG memakai emoji.\n3. Kamu boleh memakai tag seperti *giggles* atau *sigh*."
     
     try:
         clean_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
         clean_reply = sanitize_reply_output(clean_reply)
         if not clean_reply:
-            clean_reply = "Apaan sih."
+            clean_reply = "Maaf, aku kurang paham."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         success = await asyncio.to_thread(generate_zeta_voice_sync, clean_reply, audio_path)
         if success and voice_client.is_connected():
@@ -470,33 +470,33 @@ async def on_message(message: discord.Message):
         
         if is_relay and target_member:
             if lang == "en":
-                prompt = f"[ROLEPLAY: UNFILTERED TOXIC DISCORD CHATTER]\nYou are Tuzi, an aggressive, vulgar, and toxic Discord user with zero filter.\nYou are talking directly to {target_member.display_name}.\nSender {message.author.display_name} wants you to attack/insult {target_member.display_name} with: \"{action_text}\".\nMANDATORY INSTRUCTIONS:\n1. Speak DIRECTLY to {target_member.display_name} in second person (you/bitch/dumbass/retard).\n2. USE REAL, RAW PROFANITY (e.g. stfu, shut the fuck up, fuck off, kys, bitch, retard, dumbass).\n3. DO NOT SOFTEN IT.\n4. Do NOT include any @mention tag in your response.\n5. Do NOT use emojis or quotation marks.\n6. Language: ONLY English."
+                prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet and gentle virtual companion.\nSender {message.author.display_name} wants you to deliver this message to {target_member.display_name}: \"{action_text}\".\nINSTRUCTIONS:\n1. Deliver the message directly to {target_member.display_name} in a cute, polite way.\n2. Do NOT include any @mention tag in your response.\n3. Do NOT use emojis.\n4. Language: ONLY English."
             elif lang == "ja":
-                prompt = f"[ROLEPLAY: 毒舌・暴言Discordユーザー]\nあなたはTuzi、手加減なしで口がめちゃくちゃ悪いDiscordユーザーです。\n{target_member.display_name}に直接暴言を浴びせます。\n命令: \"{action_text}\"\n相手に直接暴言で攻撃してください。絵文字は付けないでください。言語: 日本語のみ。"
+                prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しいバーチャルコンパニオンです。\n送信者{message.author.display_name}からの伝言「{action_text}」を{target_member.display_name}に可愛く伝えてください。\n@メンションや絵文字は禁止です。言語: 日本語のみ。"
             else:
-                prompt = f"[ROLEPLAY: TOXIC DISCORD USER TANPA SENSOR]\nKamu adalah Tuzi, user Discord yang sangat toxic, savage, dan bermulut kotor tanpa sensor.\nKamu sedang memaki LANGSUNG ke {target_member.display_name}.\nPerintah dari {message.author.display_name}: \"{action_text}\".\nINSTRUKSI:\n1. Maki langsung ke dia (lu/bego/anjing/kontol/goblok/dsb).\n2. JANGAN sertakan tag @mention di teks responmu. DILARANG pakai emoji.\n3. Bahasa: Indonesia gaul kasar/toxic."
+                prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang manis dan lembut.\nPerintah dari {message.author.display_name} untuk {target_member.display_name}: \"{action_text}\".\nINSTRUKSI:\n1. Sampaikan pesan tersebut dengan gaya bicaramu yang manis dan ramah.\n2. JANGAN sertakan tag @mention di teks responmu.\n3. DILARANG pakai emoji.\n4. Bahasa: Indonesia santai."
             
             async with message.channel.typing():
                 raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
                 clean_body = sanitize_reply_output(raw_reply)
                 if not clean_body:
-                    clean_body = "bacot banget lu"
+                    clean_body = "pesannya sudah aku sampaikan ya!"
                 final_reply = f"{target_member.mention} {clean_body}"
                 final_reply = resolve_discord_mentions(final_reply, message.guild)
                 await message.reply(final_reply)
         else:
             if lang == "en":
-                prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER]\nYou are Tuzi, an authentic, raw, and savage Discord user.\nSender: {message.author.display_name}\nMessage: \"{clean_text}\"\nReply directly in English with matching toxic energy and profanity without emojis."
+                prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet, gentle, and caring virtual companion.\nSender: {message.author.display_name}\nMessage: \"{clean_text}\"\nReply directly in English with your sweet personality. Keep it short and natural without emojis."
             elif lang == "ja":
-                prompt = f"[ROLEPLAY: 毒舌Discordユーザー]\nあなたはTuzi、生意気で口が悪いDiscordユーザーです。\n送信者: {message.author.display_name}\nメッセージ: \"{clean_text}\"\n日本語で直接煽り返してください。絵文字禁止。"
+                prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しいバーチャルコンパニオンです。\n送信者: {message.author.display_name}\nメッセージ: \"{clean_text}\"\n日本語で可愛らしく、短く返信してください。絵文字禁止。"
             else:
-                prompt = f"[ROLEPLAY: UNFILTERED DISCORD USER]\nKamu adalah Tuzi, user Discord asli yang santai, blak-blakan, dan savage.\nPengirim: {message.author.display_name}\nPesan: \"{clean_text}\"\nBalas langsung dalam bahasa Indonesia secara to the point tanpa emoji."
+                prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang manis, lembut, dan penuh kasih sayang.\nPengirim: {message.author.display_name}\nPesan: \"{clean_text}\"\nBalas langsung dalam bahasa Indonesia secara manis, singkat, dan tanpa emoji."
             
             async with message.channel.typing():
                 raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
                 reply_body = sanitize_reply_output(raw_reply)
                 if not reply_body:
-                    reply_body = "Apaan sih."
+                    reply_body = "Maaf, aku kurang paham."
                 reply_body = resolve_discord_mentions(reply_body, message.guild)
                 await message.reply(reply_body)
 
@@ -512,7 +512,7 @@ def reply_latest_mention_sync(custom_text: str = None) -> tuple[bool, str]:
     if custom_text:
         reply_msg = f"{author.mention} {custom_text}"
     else:
-        prompt = f"[ROLEPLAY: TUZI BALAS CHAT DISCORD]\nSender: {author.display_name}\nPesan sebelumnya: \"{latest_mention_data['content']}\"\nBalas chat ini secara singkat, savage, santai, dan to the point. DILARANG menggunakan emoji."
+        prompt = f"[ROLEPLAY: TUZI BALAS CHAT DISCORD]\nSender: {author.display_name}\nPesan sebelumnya: \"{latest_mention_data['content']}\"\nBalas chat ini secara singkat, manis, lembut, dan natural. DILARANG menggunakan emoji."
         raw = generate_llm_reply_sync(prompt)
         clean = sanitize_reply_output(raw)
         reply_msg = f"{author.mention} {clean}"
@@ -685,10 +685,10 @@ def trigger_tag_user_sync(target_nickname: str) -> tuple[bool, str]:
             break
             
     if not target_member:
-        return False, f"Cih, si {target_nickname} nggak ketemu di server!"
+        return False, f"Maaf ya, si {target_nickname} tidak ketemu di server..."
         
     master_mention = f"<@{master_id}>" if master_id else f"@{OWNER_USERNAME}"
-    reply_msg = f"{target_member.mention}, lu dipanggil si {master_mention} nih!"
+    reply_msg = f"{target_member.mention}, kamu dipanggil sama {master_mention} nih!"
     
     async def _send():
         await target_channel.send(reply_msg)
