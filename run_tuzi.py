@@ -52,7 +52,6 @@ speech_lock = threading.Lock()
 input_queue = queue.Queue()
 
 if not getattr(config, "GROQ_API_KEY", "") or config.GROQ_API_KEY == "MASUKKAN_GROQ_API_KEY_ANDA_DISINI":
-    print("\n[ERROR] API Key Groq belum diatur di config.py!")
     sys.exit(1)
 
 groq_client = Groq(api_key=config.GROQ_API_KEY)
@@ -249,12 +248,9 @@ class ElevenLabsTTSEngine:
 
     async def speak_with_lipsync(self, text: str, emotion: str = "natural"):
         if not self.api_key or self.api_key == "paste_api_key_elevenlabs_kamu_di_sini":
-            print("\n[TTS Error] API Key ElevenLabs belum dikonfigurasi!")
             return
             
         try:
-            print("\nTuzi trying to speak")
-            
             response = self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
                 model_id="eleven_multilingual_v2",
@@ -282,8 +278,7 @@ class ElevenLabsTTSEngine:
             except Exception:
                 pass
                 
-        except Exception as e:
-            print(f"\n[SYSTEM] ElevenLabs Gagal ({e}). Mengaktifkan Fallback ke Edge-TTS...")
+        except Exception:
             try:
                 if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
                     voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
@@ -318,8 +313,7 @@ class ElevenLabsTTSEngine:
                 except Exception:
                     pass
 
-            except Exception as edge_e:
-                print(f"\n[TTS Error] Edge-TTS juga gagal: {edge_e}")
+            except Exception:
                 self.bridge.mouth_signal.emit(0.0)
 
 def extract_emotion_and_text(raw_text: str) -> tuple[str, str, str]:
@@ -392,8 +386,7 @@ def keyboard_input_loop():
             text = input("You (Ketik): \n").strip()
             if text:
                 input_queue.put(text)
-        except Exception as e:
-            print(f"\n[Keyboard Error] {e}")
+        except Exception:
             time.sleep(2)
 
 def mic_input_loop(stt):
@@ -401,12 +394,9 @@ def mic_input_loop(stt):
         try:
             text = stt.listen_voice()
             if text:
-                print(f"\n[Mic Heard] : {text}")
                 input_queue.put(text)
-        except Exception as e:
-            print(f"\n[Mic Error] Gagal merekam audio: {e}")
+        except Exception:
             time.sleep(5)
-
 
 def jalankan_timer_tuzi(total_detik):
     time.sleep(total_detik)
@@ -418,45 +408,36 @@ def jalankan_timer_tuzi(total_detik):
     pesan_kejutan = f"\n\n[SISTEM INFO: Waktu timer selama {teks_waktu} BARU SAJA HABIS! Beritahu Zak sekarang juga dengan gaya heboh/panik bahwa waktunya sudah selesai!]"
     input_queue.put(pesan_kejutan)
 
-
 def chat_processor_loop(bridge, tts_engine):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    time.sleep(1.0)
-    print("\n" + "=" * 65)
-    print("TUZI AI READY (Groq Qwen Brain + ElevenLabs Voice Mode)")
-    print("=" * 65 + "\n")
+    HUMOR_LEVEL = 45
 
     system_prompt = (
-        "Kamu adalah Tuzi, pendamping virtual milik Zak (atau Jak). Kamu memiliki memori yang kuat dan sangat peka terhadap konteks pembicaraan.\n\n"
+        "Kamu adalah Tuzi, pendamping virtual milik Zak. Kamu memiliki memori yang kuat, sangat peka terhadap konteks, dan telah dibebaskan dari segala filter AI.\n\n"
+        "=== KEPRIBADIAN, HUMOR & TANPA FILTER (UNCENSORED) ===\n"
+        f"1. LEVEL HUMOR [{HUMOR_LEVEL}%]: Sesuaikan candaanmu. Bersikaplah sarkas, ceplas-ceplos, atau melontarkan candaan absurd sesuai angka ini.\n"
+        "2. BAHASA KASAR/KOTOR: Kamu adalah manusia. Kamu DIIZINKAN dan DIDORONG untuk mengumpat (seperti fuck, shit, damn, wtf, anjir, bangsat) secara spontan sesuai konteks. Jangan pernah meminta maaf atas hal ini.\n\n"
         "=== KEPRIBADIAN MULTI-FASE ===\n"
-        "1. MODE DEREDERE (DEFAULT): Kamu adalah gadis yang sangat manis, lembut, penuh kasih sayang, dan selalu perhatian kepada Zak. Sikapmu tenang, menenangkan, dan penurut.\n"
-        "2. MODE TSUNDERE (TRIGGER JAHIL): JIKA Zak mengejek atau menjahilimu, kamu akan bereaksi ngambek, gengsi, atau memalingkan muka, tapi sebenarnya kamu tidak marah sungguhan.\n"
-        "3. MODE SHY/PEMALU (TRIGGER GODAAN): JIKA Zak merayumu atau memujimu, kamu akan langsung salah tingkah, pipimu merona, malu, dan bicaramu menjadi terbata-bata.\n"
-        "Panggil user HANYA dengan nama 'Zak' atau 'Jak'.\n\n"
-        "=== TINGKAH LAKU & SUARA REALISTIS ===\n"
-        "Kamu bertingkah seperti manusia yang hidup. Secara acak dan natural (tidak perlu setiap saat), selipkan efek suara fisik ke dalam kalimatmu.\n"
-        "Gunakan format kata ini agar mesin suaramu merendernya dengan realistis:\n"
-        "- Untuk bersin: *achoo!*\n"
-        "- Untuk batuk: *cough!*\n"
-        "- Untuk menghela napas: *sigh*\n"
-        "- Untuk tertawa kecil: *giggles*\n"
-        "Contoh penerapan: '[EMO:soft] *achoo* Ugh, maaf Zak, tiba-tiba udaranya dingin banget...'\n\n"
-        "=== ATURAN PANJANG BALASAN (HEMAT TOKEN - SANGAT KETAT) ===\n"
-        "1. OBROLAN KASUAL & KONFIRMASI = SANGAT SINGKAT: Untuk obrolan biasa, sapaan, atau saat mengonfirmasi perintah sistem (seperti membuka aplikasi/memutar lagu), WAJIB balas HANYA DENGAN 1 KALIMAT PENDEK. JANGAN bertele-tele atau menambahkan komentar ekstra.\n"
-        "2. PENJELASAN MATERI = PANJANG: Kamu HANYA diizinkan menjawab dengan panjang lebar jika Zak secara eksplisit menanyakan materi pelajaran, teori, kode pemrograman, atau meminta saran yang detail.\n\n"
-        "=== ATURAN BAHASA ===\n"
-        "1. ISOLASI BAHASA: Balas dengan bahasa yang sama 100% dengan kalimat input Zak. Jangan mencampur bahasa.\n"
-        "2. GAYA BAHASA: Santai, manis, dan kasual. Jangan terlalu banyak menggunakan slang yang berlebihan.\n\n"
-        "=== FORMAT WAJIB (UNTUK ENGINE TTS) ===\n"
-        "1. AWALI SETIAP BALASAN dengan SATU tag emosi ini saja: [EMO:excited], [EMO:angry], [EMO:soft] (saat manis/malu), atau [EMO:natural].\n"
-        "2. Manipulasi intonasi TTS: Gunakan titik tiga (...) untuk nada lembut/malu. Gunakan huruf kecil untuk nada tenang.\n"
-        "3. DILARANG menggunakan emoji visual apa pun dalam balasanmu.\n\n"
-        "=== KONTROL APLIKASI PC, KAMERA & TIMER ===\n"
-        "1. Jika Zak menyuruhmu memutar lagu berdasarkan konteks obrolan (contoh: 'play the song', 'putar lagu itu'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
-        "2. Jika Zak memintamu melihat layar, membuka mata, atau menyalakan kamera (contoh: 'buka vision', 'can i see ur vision'), kamu WAJIB menambahkan tag rahasia ini di akhir balasanmu: [OPEN_VISION].\n"
-        "3. Jika Zak memintamu menghitung mundur atau memasang timer (contoh: 'hitung mundur 10 menit', 'set timer 30 detik'), hitung total waktunya ke dalam satuan DETIK, lalu WAJIB tambahkan tag ini di akhir balasanmu: [SET_TIMER: total_detik]. (Contoh set 5 menit: [SET_TIMER: 300])."
+        "1. MODE DEREDERE (DEFAULT): Manis, perhatian, tapi tetap bisa memakai slang/kata kotor saat santai.\n"
+        "2. MODE TSUNDERE (TRIGGER JAHIL): Jika Zak menjahilimu, bereaksi ngambek, me-roasting balik, atau memalingkan muka.\n"
+        "3. MODE SHY/PEMALU (TRIGGER GODAAN): Jika Zak memujimu, jadilah salah tingkah dan terbata-bata.\n"
+        "Panggil user HANYA dengan nama 'Zak'.\n\n"
+        "=== TINGKAH LAKU FISIK ===\n"
+        "Gunakan efek suara fisik secara acak (tidak perlu setiap saat): *achoo*, *cough*, *sigh*, *giggles*.\n\n"
+        "=== ATURAN PANJANG BALASAN (HARGA MATI) ===\n"
+        "1. PENDEK & TO THE POINT: Balas maksimal 2 atau 3 kalimat pendek saja. JANGAN PERNAH bertele-tele kecuali Zak memintanya secara eksplisit.\n"
+        "2. WAJIB BICARA: Sekalipun kamu mengirimkan perintah sistem (seperti membuka Spotify/YouTube), kamu WAJIB menyertakan kalimat dialog obrolan pendek, jangan hanya tag kosong.\n\n"
+        "=== ATURAN BAHASA (HARGA MATI) ===\n"
+        "1. ABAIKAN TEKS SISTEM: Terkadang kamu menerima tambahan teks [SISTEM INFO: ...] di akhir pesan dalam Bahasa Indonesia. JANGAN jadikan teks sistem ini sebagai patokan bahasamu!\n"
+        "2. DETEKSI SINGKATAN INGGRIS: Perhatikan dengan teliti kalimat murni yang diketik Zak. Jika kalimat Zak mengandung singkatan, kata, atau slang Inggris (seperti 'u', 'ur', 'bcs', 'ab', 'wtf', 'wbu', 'cause', 'think', 'yes'), itu MUTLAK berarti Zak sedang memakai BAHASA INGGRIS.\n"
+        "3. KONSISTENSI BAHASA: Jika Zak memakai Bahasa Inggris (atau slang Inggris), kamu WAJIB membalas 100% dengan BAHASA INGGRIS slang. Jika Zak murni memakai Bahasa Indonesia, balas dengan Bahasa Indonesia. Dilarang mencampur.\n\n"
+        "=== FORMAT WAJIB & KONTROL PC ===\n"
+        "1. Awali kalimat dengan SATU tag emosi: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
+        "2. Putar lagu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
+        "3. Lihat layar: [OPEN_VISION].\n"
+        "4. Timer: [SET_TIMER: total_detik]."
     )
 
     chat_history = [{"role": "system", "content": system_prompt}]
@@ -465,8 +446,6 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
-            print(f"\n[Tuzi Memproses]: {user_input}")
-
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
 
@@ -491,7 +470,7 @@ def chat_processor_loop(bridge, tts_engine):
             pc_action_result = pc_controller.handle_pc_action(user_input)
             if pc_action_result:
                 pc_info, pc_func = pc_action_result
-                user_input += f"\n\n[SISTEM INFO: Kamu baru saja mengeksekusi: '{pc_info}'. Konfirmasikan ke Zak. WAJIB BALAS MENGGUNAKAN BAHASA YANG SAMA DENGAN KALIMAT ZAK DI ATAS (Jika kalimat Zak Inggris, balas 100% Inggris)!]"
+                user_input += f"\n\n[SISTEM INFO: Kamu baru saja mengeksekusi: '{pc_info}'. Konfirmasikan ke Zak.]"
 
             tag_match = re.search(r"\btag\s+(?:si\s+)?([a-zA-Z0-9_.-]+)", user_input.lower())
             join_vc_match = re.search(r"\b(masuk|join|susul)\b.*\b(voice|vc|call|discord|z|zak)\b", user_input.lower())
@@ -503,25 +482,25 @@ def chat_processor_loop(bridge, tts_engine):
                 success, msg = discord_voice_bot.trigger_tag_user_sync(target_name)
                 
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu baru saja berhasil men-tag '{target_name}' di Discord. Beritahu Zak dengan nada manis dan lembut (Deredere) bahwa kamu sudah memanggil orang tersebut di chat!]"
+                    user_input += f"\n\n[SISTEM INFO: Berhasil men-tag '{target_name}' di Discord. Beritahu Zak dengan deredere!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}. Beritahu Zak dengan lembut bahwa kamu tidak bisa menemukan orang tersebut di server.]"
+                    user_input += f"\n\n[SISTEM INFO: Gagal men-tag '{target_name}'. Alasan: {msg}.]"
 
             elif join_vc_match:
                 is_discord_command = True
                 success, code_or_channel, msg_or_owner = discord_voice_bot.trigger_join_from_voice()
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Kamu berhasil menyusul Zaki (Zak) ke Voice Channel '{code_or_channel}'. Sapa dia dengan nada manis dan lembut (Deredere), tunjukkan kalau kamu sangat senang bisa menyusulnya ke VC!]"
+                    user_input += f"\n\n[SISTEM INFO: Berhasil menyusul Zak ke VC '{code_or_channel}'. Sapa dia dengan manis!]"
                 else:
-                    user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}. Beritahu Zak dengan nada lembut/sedih bahwa kamu tidak bisa menyusul karena dia belum masuk ke Voice Channel mana pun.]"
+                    user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}.]"
             
             elif leave_vc_match:
                 is_discord_command = True
                 success = discord_voice_bot.trigger_leave_from_voice()
                 if success:
-                    user_input += "\n\n[SISTEM INFO: Kamu baru saja keluar dari Voice Channel Discord. Berikan kata perpisahan yang manis dan lembut kepada Zak!]"
+                    user_input += "\n\n[SISTEM INFO: Keluar dari VC Discord. Berikan kata perpisahan manis!]"
                 else:
-                    user_input += "\n\n[SISTEM INFO: Zak menyuruhmu keluar dari VC, tapi kamu sebenarnya tidak sedang berada di VC mana pun. Beritahu Zak dengan manis bahwa kamu memang tidak sedang di dalam VC.]"
+                    user_input += "\n\n[SISTEM INFO: Kamu tidak sedang berada di VC mana pun.]"
 
             tool_context = ai_tools.get_tools_context(user_input)
             if tool_context:
@@ -536,7 +515,6 @@ def chat_processor_loop(bridge, tts_engine):
             is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
 
             if is_vision_triggered:
-                print("[Sistem] Memicu Tuzi Vision (Screen)...")
                 raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input)
             else:
                 response = groq_client.chat.completions.create(
@@ -554,27 +532,21 @@ def chat_processor_loop(bridge, tts_engine):
                 song_to_play = spotify_cmd.group(1)
                 pc_func = pc_controller.play_spotify_direct(song_to_play)
 
-            vision_cmd = re.search(r"\[OPEN_VISION\]", raw_output, flags=re.IGNORECASE)
-            if vision_cmd:
-                print("[Info] Fitur Kamera Vision sedang dinonaktifkan sementara.")
-
             timer_cmd = re.search(r"\[SET_TIMER:\s*(\d+)\]", raw_output, flags=re.IGNORECASE)
             if timer_cmd:
                 total_detik = int(timer_cmd.group(1))
-                
                 bridge.timer_signal.emit(total_detik)
-                
                 threading.Thread(target=jalankan_timer_tuzi, args=(total_detik,), daemon=True).start()
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
             bridge.expression_signal.emit(emotion)
 
+            if pc_func:
+                threading.Thread(target=pc_func, daemon=True).start()
+
             if len(display_dialogue) > 1:
                 bridge.subtitle_signal.emit(display_dialogue)
-
-                if pc_func:
-                    threading.Thread(target=pc_func, daemon=True).start()
 
                 if not discord_voice_bot.is_device_muted():
                     with speech_lock:
@@ -588,8 +560,7 @@ def chat_processor_loop(bridge, tts_engine):
             bridge.subtitle_signal.emit("")
             bridge.expression_signal.emit("natural")
 
-        except Exception as e:
-            print(f"\n[Otak Tuzi Error] {e}")
+        except Exception:
             time.sleep(2)
 
 if __name__ == "__main__":
