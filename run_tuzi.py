@@ -13,6 +13,8 @@ import warnings
 import queue
 import tempfile
 import random
+import base64
+import websockets
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -51,6 +53,10 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 speech_lock = threading.Lock()
 input_queue = queue.Queue()
 
+tuzi_location = "PC"
+ws_clients = set()
+ws_loop = None
+
 if not getattr(config, "GROQ_API_KEY", "") or config.GROQ_API_KEY == "MASUKKAN_GROQ_API_KEY_ANDA_DISINI":
     sys.exit(1)
 
@@ -68,6 +74,35 @@ def start_local_server():
     with socketserver.TCPServer(("", PORT), QuietHTTPHandler) as httpd:
         httpd.serve_forever()
 
+async def ws_handler(websocket, path):
+    ws_clients.add(websocket)
+    print(f"\n[Sistem] HP Zak berhasil terhubung ke Server Tuzi!")
+    try:
+        async for message in websocket:
+            if tuzi_location == "HP":
+                print(f"[HP] Zak: {message}")
+                input_queue.put(f"[VIA_HP] {message}")
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        ws_clients.remove(websocket)
+        print(f"\n[Sistem] HP Zak terputus dari Server.")
+
+def start_websocket_server():
+    global ws_loop
+    ws_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(ws_loop)
+    start_server = websockets.serve(ws_handler, "0.0.0.0", 8765)
+    ws_loop.run_until_complete(start_server)
+    print("[Sistem] Tuzi WebSocket Portal terbuka di port 8765")
+    ws_loop.run_forever()
+
+def broadcast_to_hp(data_dict):
+    if ws_loop and ws_clients:
+        message = json.dumps(data_dict)
+        for client in ws_clients:
+            asyncio.run_coroutine_threadsafe(client.send(message), ws_loop)
+
 class AvatarSignalBridge(QObject):
     mouth_signal = pyqtSignal(float)
     move_signal = pyqtSignal(str)
@@ -75,6 +110,7 @@ class AvatarSignalBridge(QObject):
     subtitle_signal = pyqtSignal(str)
     expression_signal = pyqtSignal(str)
     timer_signal = pyqtSignal(int) 
+    visibility_signal = pyqtSignal(bool)
 
 class TransparentAvatarWindow(QMainWindow):
     def __init__(self, bridge):
@@ -109,6 +145,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.bridge.subtitle_signal.connect(self.update_subtitle_in_web)
         self.bridge.expression_signal.connect(self.update_expression_in_web)
         self.bridge.timer_signal.connect(self.update_timer_in_web) 
+        self.bridge.visibility_signal.connect(self.setVisible)
 
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
@@ -246,23 +283,40 @@ class ElevenLabsTTSEngine:
         self.voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
         pygame.mixer.init()
 
-    async def speak_with_lipsync(self, text: str, emotion: str = "natural"):
+    async def render_audio(self, text: str):
         if not self.api_key or self.api_key == "paste_api_key_elevenlabs_kamu_di_sini":
-            return
-            
+            return None
         try:
             response = self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
                 model_id="eleven_multilingual_v2",
                 text=text
             )
-            
             audio_bytes = b"".join(response)
-            
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
                 fp.write(audio_bytes)
-                tmp_path = fp.name
-                
+                return fp.name
+        except Exception:
+            try:
+                voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+                    tmp_path = fp.name
+                communicate = edge_tts.Communicate(
+                    text, voice, 
+                    pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"), 
+                    rate=getattr(config, "EDGE_TTS_RATE", "+5%")
+                )
+                await communicate.save(tmp_path)
+                return tmp_path
+            except Exception:
+                return None
+
+    async def speak_with_lipsync(self, text: str, emotion: str = "natural"):
+        tmp_path = await self.render_audio(text)
+        if not tmp_path:
+            return
+
+        if tuzi_location == "PC":
             pygame.mixer.music.load(tmp_path)
             pygame.mixer.music.play()
             
@@ -277,44 +331,22 @@ class ElevenLabsTTSEngine:
                 os.remove(tmp_path)
             except Exception:
                 pass
-                
-        except Exception:
+        
+        elif tuzi_location == "HP":
+            with open(tmp_path, "rb") as audio_file:
+                encoded_string = base64.b64encode(audio_file.read()).decode('utf-8')
+            
+            broadcast_to_hp({
+                "type": "audio",
+                "audio_base64": encoded_string,
+                "text": text,
+                "emotion": emotion
+            })
+            
             try:
-                if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
-                    voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
-                elif any(w in text.lower().split() for w in ["what", "the", "fuck", "you", "stfu", "bitch"]):
-                    voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
-                else:
-                    voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-                    tmp_path = fp.name
-
-                communicate = edge_tts.Communicate(
-                    text, 
-                    voice, 
-                    pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"), 
-                    rate=getattr(config, "EDGE_TTS_RATE", "+5%")
-                )
-                await communicate.save(tmp_path)
-                
-                pygame.mixer.music.load(tmp_path)
-                pygame.mixer.music.play()
-                
-                while pygame.mixer.music.get_busy():
-                    self.bridge.mouth_signal.emit(random.uniform(0.1, 0.9))
-                    await asyncio.sleep(0.08)
-                    
-                self.bridge.mouth_signal.emit(0.0)
-                
-                try:
-                    pygame.mixer.music.unload()
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-
+                os.remove(tmp_path)
             except Exception:
-                self.bridge.mouth_signal.emit(0.0)
+                pass
 
 def extract_emotion_and_text(raw_text: str) -> tuple[str, str, str]:
     emo_match = re.search(r"\[EMO:\s*(\w+)\]", raw_text, flags=re.IGNORECASE)
@@ -392,6 +424,10 @@ def keyboard_input_loop():
 def mic_input_loop(stt):
     while True:
         try:
+            if tuzi_location == "HP":
+                time.sleep(1)
+                continue
+
             text = stt.listen_voice()
             if text:
                 input_queue.put(text)
@@ -409,6 +445,7 @@ def jalankan_timer_tuzi(total_detik):
     input_queue.put(pesan_kejutan)
 
 def chat_processor_loop(bridge, tts_engine):
+    global tuzi_location
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -421,8 +458,7 @@ def chat_processor_loop(bridge, tts_engine):
         "2. BAHASA KASAR/KOTOR: Kamu adalah manusia. Kamu DIIZINKAN dan DIDORONG untuk mengumpat (seperti fuck, shit, damn, wtf, anjir, bangsat) secara spontan sesuai konteks. Jangan pernah meminta maaf atas hal ini.\n\n"
         "=== KEPRIBADIAN MULTI-FASE ===\n"
         "1. MODE DEREDERE (DEFAULT): Manis, perhatian, tapi tetap bisa memakai slang/kata kotor saat santai.\n"
-        "2. MODE TSUNDERE (TRIGGER JAHIL): Jika Zak menjahilimu, bereaksi ngambek, me-roasting balik, atau memalingkan muka.\n"
-        "3. MODE SHY/PEMALU (TRIGGER GODAAN): Jika Zak memujimu, jadilah salah tingkah dan terbata-bata.\n"
+        "2. MODE SHY/PEMALU (TRIGGER GODAAN): Jika Zak memujimu, jadilah salah tingkah dan terbata-bata.\n"
         "Panggil user HANYA dengan nama 'Zak'.\n\n"
         "=== TINGKAH LAKU FISIK ===\n"
         "Gunakan efek suara fisik secara acak (tidak perlu setiap saat): *achoo*, *cough*, *sigh*, *giggles*.\n\n"
@@ -433,11 +469,14 @@ def chat_processor_loop(bridge, tts_engine):
         "1. ABAIKAN TEKS SISTEM: Terkadang kamu menerima tambahan teks [SISTEM INFO: ...] di akhir pesan dalam Bahasa Indonesia. JANGAN jadikan teks sistem ini sebagai patokan bahasamu!\n"
         "2. DETEKSI SINGKATAN INGGRIS: Perhatikan dengan teliti kalimat murni yang diketik Zak. Jika kalimat Zak mengandung singkatan, kata, atau slang Inggris (seperti 'u', 'ur', 'bcs', 'ab', 'wtf', 'wbu', 'cause', 'think', 'yes'), itu MUTLAK berarti Zak sedang memakai BAHASA INGGRIS.\n"
         "3. KONSISTENSI BAHASA: Jika Zak memakai Bahasa Inggris (atau slang Inggris), kamu WAJIB membalas 100% dengan BAHASA INGGRIS slang. Jika Zak murni memakai Bahasa Indonesia, balas dengan Bahasa Indonesia. Dilarang mencampur.\n\n"
-        "=== FORMAT WAJIB & KONTROL PC ===\n"
+        "=== FORMAT WAJIB & KONTROL SISTEM ===\n"
         "1. Awali kalimat dengan SATU tag emosi: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
-        "2. Putar lagu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
-        "3. Lihat layar: [OPEN_VISION].\n"
-        "4. Timer: [SET_TIMER: total_detik]."
+        "2. PERINTAH RAHASIA: Jika Zak menyuruhmu:\n"
+        "   - Pindah ke HP / move to phone: WAJIB tambahkan [MOVE_TO_HP].\n"
+        "   - Kembali ke PC / move to PC: WAJIB tambahkan [MOVE_TO_PC].\n"
+        "   - Putar lagu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
+        "   - Lihat layar: [OPEN_VISION].\n"
+        "   - Timer: [SET_TIMER: total_detik]."
     )
 
     chat_history = [{"role": "system", "content": system_prompt}]
@@ -446,6 +485,12 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
+            if tuzi_location == "HP" and not user_input.startswith("[VIA_HP]") and "kembali" not in user_input.lower():
+                continue
+                
+            if user_input.startswith("[VIA_HP]"):
+                user_input = user_input.replace("[VIA_HP]", "").strip()
+
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
 
@@ -527,6 +572,16 @@ def chat_processor_loop(bridge, tts_engine):
                 
             chat_history.append({"role": "assistant", "content": raw_output})
 
+            if re.search(r"\[MOVE_TO_HP\]", raw_output, flags=re.IGNORECASE):
+                tuzi_location = "HP"
+                bridge.visibility_signal.emit(False)
+                print("\n[SYSTEM] Tuzi telah melompat ke dimensi HP!")
+                
+            elif re.search(r"\[MOVE_TO_PC\]", raw_output, flags=re.IGNORECASE):
+                tuzi_location = "PC"
+                bridge.visibility_signal.emit(True)
+                print("\n[SYSTEM] Tuzi kembali ke dimensi PC!")
+
             spotify_cmd = re.search(r"\[PLAY_SPOTIFY:\s*(.+?)\]", raw_output, flags=re.IGNORECASE)
             if spotify_cmd:
                 song_to_play = spotify_cmd.group(1)
@@ -540,13 +595,15 @@ def chat_processor_loop(bridge, tts_engine):
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
-            bridge.expression_signal.emit(emotion)
+            if tuzi_location == "PC":
+                bridge.expression_signal.emit(emotion)
 
             if pc_func:
                 threading.Thread(target=pc_func, daemon=True).start()
 
             if len(display_dialogue) > 1:
-                bridge.subtitle_signal.emit(display_dialogue)
+                if tuzi_location == "PC":
+                    bridge.subtitle_signal.emit(display_dialogue)
 
                 if not discord_voice_bot.is_device_muted():
                     with speech_lock:
@@ -556,9 +613,10 @@ def chat_processor_loop(bridge, tts_engine):
                 else:
                     discord_voice_bot.play_text_to_vc_sync(spoken_dialogue)
 
-            time.sleep(0.3)
-            bridge.subtitle_signal.emit("")
-            bridge.expression_signal.emit("natural")
+            if tuzi_location == "PC":
+                time.sleep(0.3)
+                bridge.subtitle_signal.emit("")
+                bridge.expression_signal.emit("natural")
 
         except Exception:
             time.sleep(2)
@@ -566,6 +624,9 @@ def chat_processor_loop(bridge, tts_engine):
 if __name__ == "__main__":
     server_thread = threading.Thread(target=start_local_server, daemon=True)
     server_thread.start()
+
+    ws_thread = threading.Thread(target=start_websocket_server, daemon=True)
+    ws_thread.start()
 
     app = QApplication(sys.argv)
     bridge = AvatarSignalBridge()
