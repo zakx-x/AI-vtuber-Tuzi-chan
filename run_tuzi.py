@@ -48,12 +48,14 @@ from groq import Groq
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = getattr(config, "HTTP_PORT", 8000)
+MEMORY_FILE = os.path.join(BASE_DIR, "tuzi_memory.json")
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 speech_lock = threading.Lock()
 input_queue = queue.Queue()
 
 tuzi_location = "PC"
+hp_mode = "text"
 ws_clients = set()
 ws_loop = None
 
@@ -74,28 +76,38 @@ def start_local_server():
     with socketserver.TCPServer(("", PORT), QuietHTTPHandler) as httpd:
         httpd.serve_forever()
 
-async def ws_handler(websocket, path):
+async def ws_handler(websocket):
+    global tuzi_location, hp_mode
     ws_clients.add(websocket)
     print(f"\n[Sistem] HP Zak berhasil terhubung ke Server Tuzi!")
     try:
         async for message in websocket:
-            if tuzi_location == "HP":
-                print(f"[HP] Zak: {message}")
-                input_queue.put(f"[VIA_HP] {message}")
+            try:
+                data = json.loads(message)
+                if data.get("type") == "chat":
+                    teks = data.get("text")
+                    hp_mode = data.get("mode", "text")
+                    tuzi_location = "HP"
+                    print(f"[HP - {hp_mode.upper()}] Zak: {teks}")
+                    input_queue.put(f"[VIA_HP] {teks}")
+            except json.JSONDecodeError:
+                pass
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
         ws_clients.remove(websocket)
         print(f"\n[Sistem] HP Zak terputus dari Server.")
 
+async def run_ws_server():
+    async with websockets.serve(ws_handler, "0.0.0.0", 8765):
+        print("[Sistem] Tuzi WebSocket Portal terbuka di port 8765")
+        await asyncio.Future()
+
 def start_websocket_server():
     global ws_loop
     ws_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ws_loop)
-    start_server = websockets.serve(ws_handler, "0.0.0.0", 8765)
-    ws_loop.run_until_complete(start_server)
-    print("[Sistem] Tuzi WebSocket Portal terbuka di port 8765")
-    ws_loop.run_forever()
+    ws_loop.run_until_complete(run_ws_server())
 
 def broadcast_to_hp(data_dict):
     if ws_loop and ws_clients:
@@ -418,7 +430,8 @@ def keyboard_input_loop():
             text = input("You (Ketik): \n").strip()
             if text:
                 input_queue.put(text)
-        except Exception:
+        except Exception as e:
+            print(f"\n[ERROR Input] Gagal membaca input: {e}")
             time.sleep(2)
 
 def mic_input_loop(stt):
@@ -444,8 +457,39 @@ def jalankan_timer_tuzi(total_detik):
     pesan_kejutan = f"\n\n[SISTEM INFO: Waktu timer selama {teks_waktu} BARU SAJA HABIS! Beritahu Zak sekarang juga dengan gaya heboh/panik bahwa waktunya sudah selesai!]"
     input_queue.put(pesan_kejutan)
 
+# ==========================================
+# FUNGSI PENYIMPANAN INGATAN (MEMORY)
+# ==========================================
+def load_memory(system_prompt):
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+            
+            # Pastikan prompt sistem selalu yang terbaru
+            if history and isinstance(history, list) and history[0].get("role") == "system":
+                history[0]["content"] = system_prompt
+            else:
+                history.insert(0, {"role": "system", "content": system_prompt})
+                
+            print("\n[Sistem] Ingatan Tuzi berhasil dipulihkan dari sesi sebelumnya.")
+            return history
+        except Exception:
+            pass
+            
+    print("\n[Sistem] Memulai ingatan baru untuk Tuzi.")
+    return [{"role": "system", "content": system_prompt}]
+
+def save_memory(history):
+    try:
+        with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Error] Gagal menyimpan memori ke file: {e}")
+# ==========================================
+
 def chat_processor_loop(bridge, tts_engine):
-    global tuzi_location
+    global tuzi_location, hp_mode
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -460,6 +504,8 @@ def chat_processor_loop(bridge, tts_engine):
         "1. MODE DEREDERE (DEFAULT): Manis, perhatian, tapi tetap bisa memakai slang/kata kotor saat santai.\n"
         "2. MODE SHY/PEMALU (TRIGGER GODAAN): Jika Zak memujimu, jadilah salah tingkah dan terbata-bata.\n"
         "Panggil user HANYA dengan nama 'Zak'.\n\n"
+        "=== KEMAMPUAN INTERNET ===\n"
+        "Kamu BISA dan MEMILIKI akses internet secara real-time. Jika Zak menanyakan informasi terbaru, sistem akan mencarikan datanya dan mengirimkannya padamu lewat [SISTEM INFO]. Jangan pernah berkata kamu 'hanya AI yang tidak punya akses internet'.\n\n"
         "=== TINGKAH LAKU FISIK ===\n"
         "Gunakan efek suara fisik secara acak (tidak perlu setiap saat): *achoo*, *cough*, *sigh*, *giggles*.\n\n"
         "=== ATURAN PANJANG BALASAN (HARGA MATI) ===\n"
@@ -479,7 +525,8 @@ def chat_processor_loop(bridge, tts_engine):
         "   - Timer: [SET_TIMER: total_detik]."
     )
 
-    chat_history = [{"role": "system", "content": system_prompt}]
+    # Muat ingatan lama dari file JSON saat Tuzi pertama kali booting
+    chat_history = load_memory(system_prompt)
 
     while True:
         try:
@@ -553,8 +600,9 @@ def chat_processor_loop(bridge, tts_engine):
 
             chat_history.append({"role": "user", "content": user_input})
             
-            if len(chat_history) > 15:
-                chat_history = [chat_history[0]] + chat_history[-14:]
+            # Batasi ingatan maksimal 10 pesan + 1 system prompt agar token aman
+            if len(chat_history) > 11:
+                chat_history = [chat_history[0]] + chat_history[-10:]
 
             kata_kunci_vision = ["lihat layar", "lihat ini", "baca ini", "yang mana", "di monitor", "screen", "layarku"]
             is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
@@ -566,11 +614,14 @@ def chat_processor_loop(bridge, tts_engine):
                     model="qwen/qwen3.8-27b",
                     messages=chat_history,
                     temperature=0.88,
-                    max_tokens=150
+                    max_tokens=300
                 )
                 raw_output = response.choices[0].message.content.strip()
                 
             chat_history.append({"role": "assistant", "content": raw_output})
+            
+            # Simpan seluruh ingatan ke file JSON setelah Tuzi selesai berpikir
+            save_memory(chat_history)
 
             if re.search(r"\[MOVE_TO_HP\]", raw_output, flags=re.IGNORECASE):
                 tuzi_location = "HP"
@@ -595,6 +646,12 @@ def chat_processor_loop(bridge, tts_engine):
 
             emotion, display_dialogue, spoken_dialogue = extract_emotion_and_text(raw_output)
             
+            if tuzi_location == "HP" and len(display_dialogue) > 1:
+                broadcast_to_hp({
+                    "type": "text",
+                    "text": display_dialogue
+                })
+            
             if tuzi_location == "PC":
                 bridge.expression_signal.emit(emotion)
 
@@ -605,20 +662,26 @@ def chat_processor_loop(bridge, tts_engine):
                 if tuzi_location == "PC":
                     bridge.subtitle_signal.emit(display_dialogue)
 
-                if not discord_voice_bot.is_device_muted():
-                    with speech_lock:
-                        loop.run_until_complete(
-                            tts_engine.speak_with_lipsync(spoken_dialogue, emotion=emotion)
-                        )
+                is_voice_needed = (tuzi_location == "PC") or (tuzi_location == "HP" and hp_mode == "live")
+
+                if is_voice_needed:
+                    if not discord_voice_bot.is_device_muted():
+                        with speech_lock:
+                            loop.run_until_complete(
+                                tts_engine.speak_with_lipsync(spoken_dialogue, emotion=emotion)
+                            )
+                    else:
+                        discord_voice_bot.play_text_to_vc_sync(spoken_dialogue)
                 else:
-                    discord_voice_bot.play_text_to_vc_sync(spoken_dialogue)
+                    print("[Sistem] ElevenLabs di-bypass. Tuzi hanya mengirim teks ke HP.")
 
             if tuzi_location == "PC":
                 time.sleep(0.3)
                 bridge.subtitle_signal.emit("")
                 bridge.expression_signal.emit("natural")
 
-        except Exception:
+        except Exception as e:
+            print(f"\n[ERROR Tuzi AI] Gagal memproses pesan: {e}")
             time.sleep(2)
 
 if __name__ == "__main__":

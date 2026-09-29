@@ -1,9 +1,7 @@
 from datetime import datetime
 import os
-from pydoc import text
 import re
 import warnings
-from duckduckgo_search import DDGS
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -14,7 +12,6 @@ except ImportError:
     from duckduckgo_search import DDGS
   except ImportError:
     DDGS = None
-
 
 try:
   import google.generativeai as genai
@@ -60,12 +57,9 @@ def is_asking_day(text: str) -> bool:
     return any(k in text.lower() for k in keywords)
 
 def is_time_query(text: str) -> bool:
-    """Mendeteksi apakah pertanyaan menanyakan jam/tanggal/hari secara umum."""
     return is_asking_time(text) or is_asking_date(text) or is_asking_day(text) or text.strip().lower() == "now"
 
-
 def needs_web_search(text: str) -> bool:
-    """Mendeteksi apakah pertanyaan membutuhkan pencarian internet."""
     if is_time_query(text):
         return False
 
@@ -75,21 +69,17 @@ def needs_web_search(text: str) -> bool:
         return False
 
     keywords = [
-        # Indonesian
         "siapa", "kapan", "berita", "cuaca", "harga", "skor", "jadwal",
         "terbaru", "terkini", "update", "film", "rilis", "presiden",
-        "juara", "info", "kenapa", "bagaimana cara", "apa itu",
-        # English
+        "juara", "info", "kenapa", "bagaimana cara", "apa itu", "cari tahu", "bagaimana",
         "who", "what is", "when", "news", "weather", "price", "score",
         "schedule", "latest", "movie", "release", "president", 
-        "champion", "info", "why", "how to"
+        "champion", "why", "how to", "what", "search", "tell me about"
     ]
     lower_text = text.lower()
     return any(k in lower_text for k in keywords)
 
-
 def search_internet(query: str, max_results: int = 3) -> str:
-    """Mencari informasi aktual di internet melalui DDGS dengan pembersihan teks."""
     if not DDGS:
         return "Modul duckduckgo_search/ddgs belum terpasang."
 
@@ -116,11 +106,9 @@ def search_internet(query: str, max_results: int = 3) -> str:
     except Exception as e:
         return f"Gagal mengakses internet: {e}"
 
-
 def analyze_image_with_gemini(
     image_path: str, prompt: str = "Jelaskan apa yang terlihat di gambar ini."
 ) -> str:
-    """Menganalisis gambar menggunakan Gemini Vision API."""
     if not genai or not getattr(config, "GEMINI_API_KEY", None):
         return "Gemini API belum dikonfigurasi di config.py."
 
@@ -139,7 +127,6 @@ def analyze_image_with_gemini(
 
 
 def get_tools_context(user_input: str) -> str:
-    """Menyusun konteks otomatis (Waktu/Internet) secara spesifik sesuai pertanyaan."""
     context_parts = []
     lower_input = user_input.lower().strip()
 
@@ -165,6 +152,7 @@ def get_tools_context(user_input: str) -> str:
         context_parts.append(f"[FAKTA WAKTU REALTIME: {', '.join(info_terkumpul)}]")
 
     elif needs_web_search(user_input):
+        print(f"\n[Sistem] Menarik data dari Internet untuk Zak...")
         search_data = search_internet(user_input, max_results=2)
         if (
             search_data
@@ -172,27 +160,8 @@ def get_tools_context(user_input: str) -> str:
             and "Tidak ditemukan" not in search_data
         ):
             context_parts.append(
-                f"[INFORMASI AKTUAL DARI INTERNET:\n{search_data}\n]"
+                f"[SISTEM INFO BANTUAN: Ini adalah hasil pencarian internet terbaru:\n{search_data}\n"
+                f"Jawab pertanyaan Zak dengan gayamu sendiri berdasarkan fakta ini!]"
             )
 
-    return "\n".join(context_parts)
-
-def get_tools_context(user_input: str):
-    text = user_input.lower()
-    
-    trigger_words = [
-        "siapa", "apa itu", "berita", "terbaru", "cari tahu", "bagaimana",
-        "who", "what", "news", "latest", "search", "how to", "tell me about",
-        ]
-    
-    if any(word in text for word in trigger_words):
-        print(f"\nsedang membaca artikel web untuk: '{user_input}'...")
-        try:
-            results = DDGS().text(user_input, max_results=2)
-            if results:
-                scraped_info = " ".join([res['body'] for res in results])
-                return f"[SISTEM INFO BANTUAN: Ini adalah hasil pencarian internet terbaru: {scraped_info}. Jawab pertanyaan Zak dengan gayamu sendiri berdasarkan fakta ini!]"
-        except Exception as e:
-            print(f"[Sistem Internet Error] {e}")
-            
-    return None
+    return "\n".join(context_parts) if context_parts else None
