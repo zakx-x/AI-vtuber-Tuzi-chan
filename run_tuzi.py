@@ -525,7 +525,6 @@ def chat_processor_loop(bridge, tts_engine):
         "   - Timer: [SET_TIMER: total_detik]."
     )
 
-    # Muat ingatan lama dari file JSON saat Tuzi pertama kali booting
     chat_history = load_memory(system_prompt)
 
     while True:
