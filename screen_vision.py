@@ -1,54 +1,44 @@
-import base64
-from io import BytesIO
-from PIL import ImageGrab
-from groq import Groq
+import os
 import config
+from PIL import ImageGrab
+import PIL.Image
+from google import genai
 
-client = Groq(api_key=config.GROQ_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY) if getattr(config, "GEMINI_API_KEY", None) else None
 
-def tangkap_layar_sebagai_base64():
-    """Memotret layar monitor utama dan mengompresnya."""
-    screenshot = ImageGrab.grab()
-    screenshot.thumbnail((1024, 1024))
+def tanya_tuzi_tentang_layar(user_prompt: str) -> str:
+    if not client:
+        return "[EMO:sad] Tuzi tidak bisa melihat karena GEMINI_API_KEY belum disetel di config.py!"
+        
+    screenshot_path = os.path.join(os.path.dirname(__file__), "temp_screen.png")
     
-    buffered = BytesIO()
-    screenshot.save(buffered, format="JPEG", quality=80)
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-def tanya_tuzi_tentang_layar(prompt_user):
-    """Mengirim gambar layar beserta pertanyaan Zak ke Groq Vision."""
     try:
-        base64_image = tangkap_layar_sebagai_base64()
+        ImageGrab.grab().save(screenshot_path)
+        img = PIL.Image.open(screenshot_path)
         
-        system_prompt = (
-            "Kamu adalah Tuzi. Jawab pertanyaan Zak berdasarkan gambar layar ini.\n"
-            "=== ATURAN MUTLAK ===\n"
-            "1. SANGAT SINGKAT: Jawab HANYA dengan 1-2 kalimat pendek untuk menghemat token.\n"
-            "2. TANPA EMOJI: DILARANG KERAS menggunakan emoji visual apa pun dalam balasanmu.\n"
-            "3. TAG AWALAN: AWALI setiap balasan dengan SATU tag ini saja: [EMO:excited], [EMO:soft], atau [EMO:natural].\n"
-            "4. ISOLASI BAHASA: WAJIB membalas menggunakan bahasa yang sama 100% dengan input Zak (Inggris balas Inggris, Indo balas Indo)."
-        )
+        prompt_pintar = f"""
+        Kamu adalah Tuzi, asisten virtual Zak. Saat ini kamu sedang melihat langsung ke layar monitor Zak.
         
-        response = client.chat.completions.create(
-            model="qwen/qwen3.8-27b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"{system_prompt}\n\nPertanyaan Zak: {prompt_user}"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            temperature=0.6,
-            max_tokens=150
+        Zak baru saja bertanya kepadamu tentang apa yang ada di layar ini: "{user_prompt}"
+        
+        Tugasmu:
+        1. Jawab pertanyaan Zak dengan sangat spesifik. Jika dia bertanya nama karakter, anime, atau game, gunakan pengetahuan luasmu untuk mengidentifikasinya!
+        2. Jawab dengan gaya bicara deredere/tsundere khas Tuzi. Gunakan bahasa gaul (slang) jika Zak memakai bahasa Inggris.
+        3. Awali dengan SATU tag emosi (contoh: [EMO:excited], [EMO:natural], [EMO:soft]).
+        4. Jaga balasanmu tetap pendek (maksimal 2-3 kalimat).
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=[prompt_pintar, img]
         )
-        return response.choices[0].message.content
+        return response.text.strip()
         
     except Exception as e:
-        return f"[EMO:sad] [SFX:sigh] I'm sorry Zak, my eyes are a bit blurry right now... Error: {e}"
+        error_str = str(e).upper()
+        if "503" in error_str or "UNAVAILABLE" in error_str or "OVERLOADED" in error_str:
+            return "[EMO:sad] *sigh* Server Google Gemini lagi down atau kepenuhan nih, Zak. Aku nggak bisa buka mata sekarang, coba tanya lagi beberapa menit lagi ya!"
+        elif "404" in error_str:
+            return "[EMO:angry] Zak! Model Gemini yang kita pakai sudah dihapus sama Google. Kita harus update nama model di scriptnya!"
+        else:
+            return f"[EMO:angry] Duh, mataku kelilipan error nih, Zak! Gagal lihat layar: {e}"

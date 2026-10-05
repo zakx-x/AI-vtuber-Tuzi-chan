@@ -457,16 +457,12 @@ def jalankan_timer_tuzi(total_detik):
     pesan_kejutan = f"\n\n[SISTEM INFO: Waktu timer selama {teks_waktu} BARU SAJA HABIS! Beritahu Zak sekarang juga dengan gaya heboh/panik bahwa waktunya sudah selesai!]"
     input_queue.put(pesan_kejutan)
 
-# ==========================================
-# FUNGSI PENYIMPANAN INGATAN (MEMORY)
-# ==========================================
 def load_memory(system_prompt):
     if os.path.exists(MEMORY_FILE):
         try:
             with open(MEMORY_FILE, "r", encoding="utf-8") as f:
                 history = json.load(f)
             
-            # Pastikan prompt sistem selalu yang terbaru
             if history and isinstance(history, list) and history[0].get("role") == "system":
                 history[0]["content"] = system_prompt
             else:
@@ -486,7 +482,6 @@ def save_memory(history):
             json.dump(history, f, indent=4, ensure_ascii=False)
     except Exception as e:
         print(f"[Error] Gagal menyimpan memori ke file: {e}")
-# ==========================================
 
 def chat_processor_loop(bridge, tts_engine):
     global tuzi_location, hp_mode
@@ -593,20 +588,35 @@ def chat_processor_loop(bridge, tts_engine):
                 else:
                     user_input += "\n\n[SISTEM INFO: Kamu tidak sedang berada di VC mana pun.]"
 
-            tool_context = ai_tools.get_tools_context(user_input)
-            if tool_context:
-                user_input += f"\n\n{tool_context}"
+            kata_kunci_vision = [
+                "lihat layar", "lihat ini", "baca ini", "yang mana", "di monitor", 
+                "screen", "layar", "pict", "picture", "gambar", 
+                "see my", "see this", "see it", "do u see", "do you see", "look at",
+                "character", "karakter", "what anime", "anime apa", "manga apa",
+                "what game", "game apa", "who is this", "siapa ini", "who's this",
+                "dari mana", "from what", "who is that", "siapa cowok", "siapa cewek"
+            ]
+            is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
+
+            kata_kunci_memory = [
+                "remember", "ingat", "talking before", "tadi", "sebelumnya",
+                "last time", "percakapan", "obrolan", "we talked", "ngobrol",
+                "we talking", "did i say", "what did i", "kemarin"
+            ]
+            is_memory_triggered = any(kata in user_input.lower() for kata in kata_kunci_memory)
+
+            if not is_vision_triggered and not is_memory_triggered:
+                tool_context = ai_tools.get_tools_context(user_input)
+                if tool_context:
+                    user_input += f"\n\n{tool_context}"
 
             chat_history.append({"role": "user", "content": user_input})
             
-            # Batasi ingatan maksimal 10 pesan + 1 system prompt agar token aman
             if len(chat_history) > 11:
                 chat_history = [chat_history[0]] + chat_history[-10:]
 
-            kata_kunci_vision = ["lihat layar", "lihat ini", "baca ini", "yang mana", "di monitor", "screen", "layarku"]
-            is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
-
             if is_vision_triggered:
+                print(f"\n[Sistem] Mengaktifkan Mata Tuzi (Vision) untuk Zak...")
                 raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input)
             else:
                 response = groq_client.chat.completions.create(
@@ -619,7 +629,6 @@ def chat_processor_loop(bridge, tts_engine):
                 
             chat_history.append({"role": "assistant", "content": raw_output})
             
-            # Simpan seluruh ingatan ke file JSON setelah Tuzi selesai berpikir
             save_memory(chat_history)
 
             if re.search(r"\[MOVE_TO_HP\]", raw_output, flags=re.IGNORECASE):
