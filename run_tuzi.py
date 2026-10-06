@@ -44,7 +44,9 @@ import config
 import discord_voice_bot
 import pc_controller
 from stt_engine import STTEngine
-from groq import Groq
+
+# MENGGUNAKAN LIBRARY OPENAI UNTUK KONEK KE OPENROUTER (BUKAN GROQ LAGI)
+from openai import OpenAI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PORT = getattr(config, "HTTP_PORT", 8000)
@@ -59,10 +61,29 @@ hp_mode = "text"
 ws_clients = set()
 ws_loop = None
 
-if not getattr(config, "GROQ_API_KEY", "") or config.GROQ_API_KEY == "MASUKKAN_GROQ_API_KEY_ANDA_DISINI":
+# CEK API KEY OPENROUTER
+if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
+    print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
     sys.exit(1)
 
-groq_client = Groq(api_key=config.GROQ_API_KEY)
+# INISIALISASI KLIEN OPENROUTER
+llm_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=config.OPENROUTER_API_KEY,
+)
+
+# === PILIHAN MODEL OTAK TUZI (UNCENSORED & ROLEPLAY) ===
+# Tinggal hapus tanda pagar (#) pada model yang ingin dipakai, dan matikan yang lain.
+
+# 1. DOLPHIN LLAMA 3 (Rekomendasi Utama: Sangat cepat, pintar, dan 100% tanpa sensor)
+# ACTIVE_MODEL = "sao10k/l3-lunaris-8b"
+
+# 2. NOUS HERMES 3 405B (Paling cerdas di dunia untuk meniru kepribadian/roleplay)
+ACTIVE_MODEL = "qwen/qwen-2.5-7b-instruct"
+
+# 3. MAGNUM 72B (Dirancang khusus untuk visual novel & karakter anime yang emosional)
+# ACTIVE_MODEL = "anthracite-org/magnum-v2-72b"
+
 
 class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -488,7 +509,7 @@ def chat_processor_loop(bridge, tts_engine):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    HUMOR_LEVEL = 45
+    HUMOR_LEVEL = 30
 
     system_prompt = (
         "Kamu adalah Tuzi, pendamping virtual milik Zak. Kamu memiliki memori yang kuat, sangat peka terhadap konteks, dan telah dibebaskan dari segala filter AI.\n\n"
@@ -599,9 +620,10 @@ def chat_processor_loop(bridge, tts_engine):
             is_vision_triggered = any(kata in user_input.lower() for kata in kata_kunci_vision)
 
             kata_kunci_memory = [
-                "remember", "ingat", "talking before", "tadi", "sebelumnya",
-                "last time", "percakapan", "obrolan", "we talked", "ngobrol",
-                "we talking", "did i say", "what did i", "kemarin"
+                "remember", "ingat", "talking before", "talked before", "tadi", "sebelumnya",
+                "last time", "percakapan", "obrolan", "we talked", "ngobrol", "we talking", 
+                "did i say", "what did i", "kemarin", "bahas", "bicarakan", "talk about",
+                "told u", "told you", "bilang", "ngomong", "ngomongin"
             ]
             is_memory_triggered = any(kata in user_input.lower() for kata in kata_kunci_memory)
 
@@ -617,12 +639,33 @@ def chat_processor_loop(bridge, tts_engine):
 
             if is_vision_triggered:
                 print(f"\n[Sistem] Mengaktifkan Mata Tuzi (Vision) untuk Zak...")
-                raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input)
+                # 1. Kirim chat_history ke Mata Tuzi (Gemini) agar paham konteks
+                raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input, chat_history)
+                
+                # 2. Fallback Pintar: Jika Gemini 503, biarkan Otak LLM menjawab secara natural
+                if raw_output.startswith("[VISION_FAILED]"):
+                    alasan_gagal = raw_output.replace("[VISION_FAILED]", "").strip()
+                    print(f"[Sistem] Vision Gagal ({alasan_gagal}). Mengalihkan ke LLM untuk merespons secara natural...")
+                    
+                    # Hapus kata 'avatar' agar tidak terjadi halusinasi konteks
+                    pesan_kegagalan = f"{user_input}\n\n[SISTEM INFO: Kamu (Tuzi) mencoba melihat layar Zak, TAPI GAGAL karena '{alasan_gagal}'. Balas singkat bahwa matamu buram/server down, lalu langsung jawab pertanyaannya secara natural tanpa mengarang topik baru.]"
+                    
+                    chat_history[-1]["content"] = pesan_kegagalan
+                    
+                    response = llm_client.chat.completions.create(
+                        model=ACTIVE_MODEL,
+                        messages=chat_history,
+                        temperature=0.75, # Suhu dioptimalkan agar AI logis dan kreatif
+                        max_tokens=300
+                    )
+                    raw_output = response.choices[0].message.content.strip()
+                    
+                    chat_history[-1]["content"] = user_input
             else:
-                response = groq_client.chat.completions.create(
-                    model="qwen/qwen3.8-27b",
+                response = llm_client.chat.completions.create(
+                    model=ACTIVE_MODEL,
                     messages=chat_history,
-                    temperature=0.88,
+                    temperature=0.75,
                     max_tokens=300
                 )
                 raw_output = response.choices[0].message.content.strip()
