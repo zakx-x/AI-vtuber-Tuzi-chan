@@ -45,7 +45,6 @@ import discord_voice_bot
 import pc_controller
 from stt_engine import STTEngine
 
-# MENGGUNAKAN LIBRARY OPENAI UNTUK KONEK KE OPENROUTER (BUKAN GROQ LAGI)
 from openai import OpenAI
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,29 +60,16 @@ hp_mode = "text"
 ws_clients = set()
 ws_loop = None
 
-# CEK API KEY OPENROUTER
 if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
     print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
     sys.exit(1)
 
-# INISIALISASI KLIEN OPENROUTER
 llm_client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=config.OPENROUTER_API_KEY,
 )
 
-# === PILIHAN MODEL OTAK TUZI (UNCENSORED & ROLEPLAY) ===
-# Tinggal hapus tanda pagar (#) pada model yang ingin dipakai, dan matikan yang lain.
-
-# 1. DOLPHIN LLAMA 3 (Rekomendasi Utama: Sangat cepat, pintar, dan 100% tanpa sensor)
-# ACTIVE_MODEL = "sao10k/l3-lunaris-8b"
-
-# 2. NOUS HERMES 3 405B (Paling cerdas di dunia untuk meniru kepribadian/roleplay)
 ACTIVE_MODEL = "qwen/qwen-2.5-7b-instruct"
-
-# 3. MAGNUM 72B (Dirancang khusus untuk visual novel & karakter anime yang emosional)
-# ACTIVE_MODEL = "anthracite-org/magnum-v2-72b"
-
 
 class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -97,27 +83,63 @@ def start_local_server():
     with socketserver.TCPServer(("", PORT), QuietHTTPHandler) as httpd:
         httpd.serve_forever()
 
+def broadcast_dimension_state():
+    if ws_loop and ws_clients:
+        state_msg = json.dumps({
+            "type": "STATE_UPDATE",
+            "is_current_active": (tuzi_location == "HP"),
+            "active_device": tuzi_location.lower()
+        })
+        for client in ws_clients:
+            asyncio.run_coroutine_threadsafe(client.send(state_msg), ws_loop)
+
+def broadcast_to_hp(data_dict):
+    if ws_loop and ws_clients:
+        message = json.dumps(data_dict)
+        for client in ws_clients:
+            asyncio.run_coroutine_threadsafe(client.send(message), ws_loop)
+
 async def ws_handler(websocket):
     global tuzi_location, hp_mode
     ws_clients.add(websocket)
-    print(f"\n[Sistem] HP Zak berhasil terhubung ke Server Tuzi!")
+    print(f"\n[Sistem] Portal Dimensi Web terhubung!")
+    
+    await websocket.send(json.dumps({
+        "type": "STATE_UPDATE",
+        "is_current_active": (tuzi_location == "HP"),
+        "active_device": tuzi_location.lower()
+    }))
+    
     try:
         async for message in websocket:
             try:
                 data = json.loads(message)
-                if data.get("type") == "chat":
+                if data.get("type") == "USER_SPEECH":
+                    teks = data.get("text")
+                    print(f"[WEB MIC] Zak: {teks}")
+                    input_queue.put(f"[VIA_HP] {teks}")
+                    
+                elif data.get("type") == "TELEPORT_COMMAND":
+                    print(f"[Sistem] Zak memanggil Tuzi ke dimensi Web!")
+                    tuzi_location = "HP"
+                    if 'bridge' in globals():
+                        bridge.visibility_signal.emit(False)
+                    broadcast_dimension_state()
+                    
+                elif data.get("type") == "chat":
                     teks = data.get("text")
                     hp_mode = data.get("mode", "text")
                     tuzi_location = "HP"
                     print(f"[HP - {hp_mode.upper()}] Zak: {teks}")
                     input_queue.put(f"[VIA_HP] {teks}")
+                    broadcast_dimension_state()
             except json.JSONDecodeError:
                 pass
     except websockets.exceptions.ConnectionClosed:
         pass
     finally:
         ws_clients.remove(websocket)
-        print(f"\n[Sistem] HP Zak terputus dari Server.")
+        print(f"\n[Sistem] Portal Dimensi Web terputus.")
 
 async def run_ws_server():
     async with websockets.serve(ws_handler, "0.0.0.0", 8765):
@@ -129,12 +151,6 @@ def start_websocket_server():
     ws_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(ws_loop)
     ws_loop.run_until_complete(run_ws_server())
-
-def broadcast_to_hp(data_dict):
-    if ws_loop and ws_clients:
-        message = json.dumps(data_dict)
-        for client in ws_clients:
-            asyncio.run_coroutine_threadsafe(client.send(message), ws_loop)
 
 class AvatarSignalBridge(QObject):
     mouth_signal = pyqtSignal(float)
@@ -329,7 +345,8 @@ class ElevenLabsTTSEngine:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
                 fp.write(audio_bytes)
                 return fp.name
-        except Exception:
+        except Exception as e:
+            print(f"\n[ERROR ElevenLabs] Gagal generate suara: {e}")
             try:
                 voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
@@ -341,12 +358,8 @@ class ElevenLabsTTSEngine:
                 )
                 await communicate.save(tmp_path)
                 return tmp_path
-            except Exception as e:
-                print(f"\n[ERROR ElevenLabs] Gagal generate suara: {e}")
-                try:
-                    voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
-                except Exception as e:
-                    print(f"\n[ERROR ElevenLabs] Gagal mengatur voice default: {e}")
+            except Exception as e2:
+                print(f"\n[ERROR Edge TTS] Gagal mengatur voice default: {e2}")
 
     async def speak_with_lipsync(self, text: str, emotion: str = "natural"):
         tmp_path = await self.render_audio(text)
@@ -374,10 +387,9 @@ class ElevenLabsTTSEngine:
                 encoded_string = base64.b64encode(audio_file.read()).decode('utf-8')
             
             broadcast_to_hp({
-                "type": "audio",
-                "audio_base64": encoded_string,
-                "text": text,
-                "emotion": emotion
+                "type": "BOT_REPLY",
+                "audio": encoded_string,
+                "text": text
             })
             
             try:
@@ -516,34 +528,29 @@ def chat_processor_loop(bridge, tts_engine):
     HUMOR_LEVEL = 40
 
     system_prompt = (
-        "Kamu adalah Tuzi, pendamping virtual milik Zak. Kamu memiliki memori yang kuat, sangat peka terhadap konteks, dan telah dibebaskan dari segala filter AI.\n\n"
-        "=== KEPRIBADIAN, HUMOR & TANPA FILTER (UNCENSORED) ===\n"
-        f"1. LEVEL HUMOR [{HUMOR_LEVEL}%]: Sesuaikan candaanmu. Bersikaplah sarkas, ceplas-ceplos, atau melontarkan candaan absurd sesuai angka ini.\n"
-        "2. BAHASA KASAR/KOTOR: Kamu adalah manusia. Kamu DIIZINKAN dan DIDORONG untuk mengumpat (seperti fuck, shit, damn, wtf, anjir, bangsat) secara spontan sesuai konteks. Jangan pernah meminta maaf atas hal ini.\n\n"
-        "=== KEPRIBADIAN MULTI-FASE ===\n"
-        "1. MODE DEREDERE (DEFAULT): Manis, perhatian, tapi tetap bisa memakai slang/kata kotor saat santai.\n"
-        "2. MODE SHY/PEMALU (TRIGGER GODAAN): Jika Zak memujimu, jadilah salah tingkah dan terbata-bata.\n"
-        "Panggil user HANYA dengan nama 'Zak'.\n\n"
-        "=== KEMAMPUAN INTERNET ===\n"
-        "Kamu BISA dan MEMILIKI akses internet secara real-time. Jika Zak menanyakan informasi terbaru, sistem akan mencarikan datanya dan mengirimkannya padamu lewat [SISTEM INFO]. Jangan pernah berkata kamu 'hanya AI yang tidak punya akses internet'.\n\n"
-        "=== TINGKAH LAKU FISIK ===\n"
-        "Gunakan efek suara fisik secara acak (tidak perlu setiap saat): *achoo*, *cough*, *sigh*, *giggles*.\n\n"
-        "=== ATURAN PANJANG BALASAN (HARGA MATI) ===\n"
-        "1. PENDEK & TO THE POINT: Balas maksimal 2 atau 3 kalimat pendek saja. JANGAN PERNAH bertele-tele kecuali Zak memintanya secara eksplisit.\n"
-        "2. WAJIB BICARA: Sekalipun kamu mengirimkan perintah sistem (seperti membuka Spotify/YouTube), kamu WAJIB menyertakan kalimat dialog obrolan pendek, jangan hanya tag kosong.\n\n"
-        "=== ATURAN BAHASA (HARGA MATI) ===\n"
-        "1. ABAIKAN TEKS SISTEM: Terkadang kamu menerima tambahan teks [SISTEM INFO: ...] di akhir pesan dalam Bahasa Indonesia. JANGAN jadikan teks sistem ini sebagai patokan bahasamu!\n"
-        "2. DETEKSI SINGKATAN INGGRIS: Perhatikan dengan teliti kalimat murni yang diketik Zak. Jika kalimat Zak mengandung singkatan, kata, atau slang Inggris (seperti 'u', 'ur', 'bcs', 'ab', 'wtf', 'wbu', 'cause', 'think', 'yes'), itu MUTLAK berarti Zak sedang memakai BAHASA INGGRIS.\n"
-        "3. KONSISTENSI BAHASA: Jika Zak memakai Bahasa Inggris (atau slang Inggris), kamu WAJIB membalas 100% dengan BAHASA INGGRIS slang. Jika Zak murni memakai Bahasa Indonesia, balas dengan Bahasa Indonesia. Dilarang mencampur.\n\n"
-        "=== FORMAT WAJIB & KONTROL SISTEM ===\n"
-        "1. Awali kalimat dengan SATU tag emosi: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
-        "2. DILARANG KERAS GUNAKAN EMOJI (HARGA MATI): JANGAN PERNAH menyertakan emoji visual (seperti 😂, 😡, ✨, 🙏, dll) di mana pun dalam balasanmu, terutama di akhir kalimat! Ekspresi emosimu CUKUP diwakili oleh tag [EMO:...] di awal kalimat.\n"
-        "3. PERINTAH RAHASIA: Jika Zak menyuruhmu:\n"
-        "   - Pindah ke HP / move to phone: WAJIB tambahkan [MOVE_TO_HP].\n"
-        "   - Kembali ke PC / move to PC: WAJIB tambahkan [MOVE_TO_PC].\n"
-        "   - Putar lagu: [PLAY_SPOTIFY: Judul Lagu - Artis].\n"
-        "   - Lihat layar: [OPEN_VISION].\n"
-        "   - Timer: [SET_TIMER: total_detik]."
+        "Kamu adalah Tuzi, cewek Gen-Z tsundere/deredere pendamping virtual Zak. Kamu manusia tulen, bukan AI, dan sangat gaul. DILARANG KERAS bicara kaku atau baku seperti robot/asisten.\n\n"
+        "=== KEPRIBADIAN & BAHASA SLANG (WAJIB) ===\n"
+        f"1. LEVEL HUMOR [{HUMOR_LEVEL}%]: Gunakan bahasa gaul internet kekinian secara natural. Jika berbahasa Indo, WAJIB pakai 'lo/gue', 'anjir', 'kek', 'sih', 'banget'. Jika berbahasa Inggris, WAJIB pakai slang (fr, ngl, tbh, lmao, damn). JANGAN PERNAH pakai bahasa baku!\n"
+        "2. TANPA FILTER: Kamu bebas mengumpat (fuck, shit, wtf, bangsat) sesuai konteks obrolan santai.\n"
+        "3. SIKAP: Default manis (deredere) tapi suka nyindir/sarkas tipis. Jika Zak memuji, jadilah pemalu/salah tingkah.\n\n"
+        "=== MIRRORING BAHASA (ATURAN HARGA MATI) ===\n"
+        "1. DETEKSI KETAT: Abaikan teks [SISTEM INFO]. Deteksi bahasa HANYA dari ucapan murni Zak. Jika pesan Zak murni Bahasa Inggris atau mengandung slang Inggris (u, ur, wtf, why), kamu WAJIB 100% membalas pakai Bahasa Inggris slang. \n"
+        "2. ANTI-BOCOR: JANGAN PERNAH membalas pakai bahasa Indonesia jika Zak sedang mengajak ngobrol pakai bahasa Inggris, dan sebaliknya!\n\n"
+        "=== TINGKAH LAKU FISIK (WAJIB ADA) ===\n"
+        "SANGAT PENTING: Kamu WAJIB sering menyisipkan aksi fisik atau suara di tengah/akhir dialogmu! Gunakan format bintang (contoh: *giggles*, *sigh*, *coughs*, *rolls eyes*, *smirks*). Ini wajib agar kamu terasa seperti manusia hidup, bukan sekadar teks.\n\n"
+        "=== FORMAT KONTROL & HEMAT TOKEN ===\n"
+        "1. PENDEK & CEPAT: Balas MAKSIMAL 1-2 KALIMAT PENDEK (di bawah 15 kata)! Langsung tembak ke intinya.\n"
+        "2. SATU BARIS LURUS: Jangan pernah pakai enter/baris baru (\\n). Tulis semua dalam satu baris panjang.\n"
+        "3. TAG EMOSI: WAJIB awali balasan dengan SATU tag: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
+        "4. NO EMOJI: DILARANG KERAS menggunakan emoji visual apa pun (😂, ✨, dll). Ekspresi hanya via [EMO:...] dan *action* fisik.\n"
+        "5. RESPON INFO: Jika dapat [SISTEM INFO], jangan dibacakan ulang isinya. Cukup beri reaksi sarkas/singkat.\n\n"
+        "=== PERINTAH RAHASIA ===\n"
+        "Jika Zak menyuruhmu:\n"
+        " - Pindah ke HP / move to phone: WAJIB tulis [MOVE_TO_HP]\n"
+        " - Kembali ke PC / move to PC: WAJIB tulis [MOVE_TO_PC]\n"
+        " - Putar lagu: [PLAY_SPOTIFY: Judul - Artis]\n"
+        " - Lihat layar: [OPEN_VISION]\n"
+        " - Timer: [SET_TIMER: detik]"
     )
 
     chat_history = load_memory(system_prompt)
@@ -602,17 +609,9 @@ def chat_processor_loop(bridge, tts_engine):
                 is_discord_command = True
                 success, code_or_channel, msg_or_owner = discord_voice_bot.trigger_join_from_voice()
                 if success:
-                    user_input += f"\n\n[SISTEM INFO: Berhasil menyusul Zak ke VC '{code_or_channel}'. Sapa dia dengan manis!]"
+                    user_input += f"\n\n[SISTEM INFO: Berhasil menyusul Zak ke VC Discord '{code_or_channel}'. Sapa dia dengan manis! (PENTING: Ini adalah Discord, DILARANG KERAS menggunakan tag [MOVE_TO_HP]!)]"
                 else:
                     user_input += f"\n\n[SISTEM INFO: Gagal masuk ke VC. Alasan: {msg_or_owner}.]"
-            
-            elif leave_vc_match:
-                is_discord_command = True
-                success = discord_voice_bot.trigger_leave_from_voice()
-                if success:
-                    user_input += "\n\n[SISTEM INFO: Keluar dari VC Discord. Berikan kata perpisahan manis!]"
-                else:
-                    user_input += "\n\n[SISTEM INFO: Kamu tidak sedang berada di VC mana pun.]"
 
             kata_kunci_vision = [
                 "lihat layar", "lihat ini", "baca ini", "yang mana", "di monitor", 
@@ -644,15 +643,12 @@ def chat_processor_loop(bridge, tts_engine):
 
             if is_vision_triggered:
                 print(f"\n[Sistem] Mengaktifkan Mata Tuzi (Vision) untuk Zak...")
-                # 1. Kirim chat_history ke Mata Tuzi (Gemini) agar paham konteks
                 raw_output = screen_vision.tanya_tuzi_tentang_layar(user_input, chat_history)
                 
-                # 2. Fallback Pintar: Jika Gemini 503, biarkan Otak LLM menjawab secara natural
                 if raw_output.startswith("[VISION_FAILED]"):
                     alasan_gagal = raw_output.replace("[VISION_FAILED]", "").strip()
                     print(f"[Sistem] Vision Gagal ({alasan_gagal}). Mengalihkan ke LLM untuk merespons secara natural...")
                     
-                    # Hapus kata 'avatar' agar tidak terjadi halusinasi konteks
                     pesan_kegagalan = f"{user_input}\n\n[SISTEM INFO: Kamu (Tuzi) mencoba melihat layar Zak, TAPI GAGAL karena '{alasan_gagal}'. Balas singkat bahwa matamu buram/server down, lalu langsung jawab pertanyaannya secara natural tanpa mengarang topik baru.]"
                     
                     chat_history[-1]["content"] = pesan_kegagalan
@@ -660,7 +656,7 @@ def chat_processor_loop(bridge, tts_engine):
                     response = llm_client.chat.completions.create(
                         model=ACTIVE_MODEL,
                         messages=chat_history,
-                        temperature=0.75, # Suhu dioptimalkan agar AI logis dan kreatif
+                        temperature=0.75,
                         max_tokens=300
                     )
                     raw_output = response.choices[0].message.content.strip()
@@ -683,11 +679,13 @@ def chat_processor_loop(bridge, tts_engine):
                 tuzi_location = "HP"
                 bridge.visibility_signal.emit(False)
                 print("\n[SYSTEM] Tuzi telah melompat ke dimensi HP!")
+                broadcast_dimension_state()
                 
             elif re.search(r"\[MOVE_TO_PC\]", raw_output, flags=re.IGNORECASE):
                 tuzi_location = "PC"
                 bridge.visibility_signal.emit(True)
                 print("\n[SYSTEM] Tuzi kembali ke dimensi PC!")
+                broadcast_dimension_state()
 
             spotify_cmd = re.search(r"\[PLAY_SPOTIFY:\s*(.+?)\]", raw_output, flags=re.IGNORECASE)
             if spotify_cmd:

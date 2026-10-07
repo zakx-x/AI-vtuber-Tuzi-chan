@@ -17,7 +17,7 @@ import requests
 import speech_recognition as sr
 import config
 from elevenlabs.client import ElevenLabs
-from groq import Groq
+from openai import OpenAI
 
 logging.getLogger("discord.ext.voice_recv").setLevel(logging.ERROR)
 logging.getLogger("discord.voice_state").setLevel(logging.WARNING)
@@ -54,7 +54,7 @@ is_bot_speaking = False
 _is_device_muted = False
 latest_mention_data = None
 eleven_client = None
-groq_client = None
+llm_client = None
 _locked_language = None
 
 def get_eleven_client():
@@ -65,13 +65,16 @@ def get_eleven_client():
             eleven_client = ElevenLabs(api_key=api_key)
     return eleven_client
 
-def get_groq_client():
-    global groq_client
-    if groq_client is None:
-        api_key = getattr(config, "GROQ_API_KEY", "")
+def get_llm_client():
+    global llm_client
+    if llm_client is None:
+        api_key = getattr(config, "OPENROUTER_API_KEY", "")
         if api_key and not api_key.startswith("MASUKKAN"):
-            groq_client = Groq(api_key=api_key)
-    return groq_client
+            llm_client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+            )
+    return llm_client
 
 def is_device_muted() -> bool:
     return _is_device_muted
@@ -88,13 +91,13 @@ def generate_zeta_voice_sync(text: str, filename: str = "temp_discord_voice.mp3"
         return False
 
     client = get_eleven_client()
-    voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+    voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
 
     if client:
         try:
             response = client.text_to_speech.convert(
                 voice_id=voice_id,
-                model_id="eleven_multilingual_v2",
+                model_id="eleven_v4_turbo",
                 text=clean
             )
             audio_bytes = b"".join(response)
@@ -106,17 +109,16 @@ def generate_zeta_voice_sync(text: str, filename: str = "temp_discord_voice.mp3"
             pass
 
     try:
+        voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
         if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", clean):
-            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
+            voice = getattr(config, "DEFAULT_EDGE_VOICE_JA", "ja-JP-NanamiNeural")
         elif any(w in clean.lower().split() for w in ["what", "the", "fuck", "you", "stfu", "kys", "bitch", "shut", "bro", "dude"]):
-            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
-        else:
-            selected_voice = getattr(config, "DEFAULT_EDGE_VOICE_ID", "id-ID-GadisNeural")
+            voice = getattr(config, "DEFAULT_EDGE_VOICE_EN", "en-US-AnaNeural")
 
         async def _gen_edge():
             communicate = edge_tts.Communicate(
                 clean,
-                selected_voice,
+                voice,
                 pitch=getattr(config, "EDGE_TTS_PITCH", "+14Hz"),
                 rate=getattr(config, "EDGE_TTS_RATE", "+5%")
             )
@@ -127,41 +129,52 @@ def generate_zeta_voice_sync(text: str, filename: str = "temp_discord_voice.mp3"
     except Exception:
         return False
 
-def generate_llm_reply_sync(prompt: str) -> str:
-    client = get_groq_client()
+def get_tuzi_system_prompt() -> str:
+    return (
+        "Kamu adalah Tuzi, cewek Gen-Z tsundere/deredere pendamping virtual Zak. Kamu manusia tulen, bukan AI, dan sangat gaul. DILARANG KERAS bicara kaku atau baku seperti robot/asisten.\n\n"
+        "=== KEPRIBADIAN & BAHASA SLANG (WAJIB) ===\n"
+        "1. LEVEL HUMOR [40%]: Gunakan bahasa gaul internet kekinian secara natural. Jika berbahasa Indo, WAJIB pakai 'lo/gue', 'anjir', 'kek', 'sih', 'banget'. Jika berbahasa Inggris, WAJIB pakai slang (fr, ngl, tbh, lmao, damn). JANGAN PERNAH pakai bahasa baku!\n"
+        "2. TANPA FILTER: Kamu bebas mengumpat (fuck, shit, wtf, bangsat) sesuai konteks obrolan santai.\n"
+        "3. SIKAP: Default manis (deredere) tapi suka nyindir/sarkas tipis. Jika dipuji, jadilah pemalu/salah tingkah.\n\n"
+        "=== MIRRORING BAHASA (ATURAN HARGA MATI) ===\n"
+        "1. DETEKSI KETAT: Abaikan teks [SISTEM INFO]. Deteksi bahasa HANYA dari ucapan murni lawan bicara. Jika pesan murni Bahasa Inggris atau mengandung slang Inggris (u, ur, wtf, why), kamu WAJIB 100% membalas pakai Bahasa Inggris slang.\n"
+        "2. ANTI-BOCOR: JANGAN PERNAH membalas pakai bahasa Indonesia jika lawan bicara sedang mengajak ngobrol pakai bahasa Inggris, dan sebaliknya!\n\n"
+        "=== TINGKAH LAKU FISIK (WAJIB ADA) ===\n"
+        "SANGAT PENTING: Kamu WAJIB sering menyisipkan aksi fisik atau suara di tengah/akhir dialogmu! Gunakan format bintang (contoh: *giggles*, *sigh*, *coughs*, *rolls eyes*, *smirks*). Ini wajib agar kamu terasa seperti manusia hidup, bukan sekadar teks.\n\n"
+        "=== FORMAT KONTROL & HEMAT TOKEN ===\n"
+        "1. PENDEK & CEPAT: Balas MAKSIMAL 1-2 KALIMAT PENDEK (di bawah 15 kata)! Langsung tembak ke intinya.\n"
+        "2. SATU BARIS LURUS: Jangan pernah pakai enter/baris baru (\\n). Tulis semua dalam satu baris panjang.\n"
+        "3. TAG EMOSI: WAJIB awali balasan dengan SATU tag: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
+        "4. NO EMOJI: DILARANG KERAS menggunakan emoji visual apa pun (😂, ✨, dll). Ekspresi hanya via [EMO:...] dan *action* fisik.\n"
+        "5. RESPON INFO: Jika dapat [SISTEM INFO], jangan dibacakan ulang isinya. Cukup beri reaksi sarkas/singkat."
+        "=== PERINTAH RAHASIA ===\n"
+        "Jika Zak menyuruhmu:\n"
+        " - Pindah layar ke HP (INGAT: 'call/vc' itu Discord, BUKAN HP!): WAJIB tulis [MOVE_TO_HP]\n"
+        " - Kembali ke PC / move to PC: WAJIB tulis [MOVE_TO_PC]\n"
+        " - Putar lagu: [PLAY_SPOTIFY: Judul - Artis]\n"
+        " - Lihat layar: [OPEN_VISION]\n"
+        " - Timer: [SET_TIMER: detik]"
+    )
+
+def generate_llm_reply_sync(prompt_user: str) -> str:
+    client = get_llm_client()
     if client:
         try:
             res = client.chat.completions.create(
-                model="qwen/qwen3.8-27b",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.88,
+                model="qwen/qwen-2.5-7b-instruct",
+                messages=[
+                    {"role": "system", "content": get_tuzi_system_prompt()},
+                    {"role": "user", "content": prompt_user}
+                ],
+                temperature=0.75,
                 max_tokens=150
             )
             raw = res.choices[0].message.content.strip()
-            return re.sub(r"\[.*?\]", "", raw).strip()
-        except Exception:
+            return raw
+        except Exception as e:
+            print(f"[ERROR Discord LLM] {e}")
             pass
-    return "Maaf, aku kurang mengerti."
-
-def detect_language(text: str) -> str:
-    if re.search(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]", text):
-        return "ja"
-
-    en_keywords = {"tell", "say", "this", "tard", "bih", "bitch", "stfu", "fuck", "kys", "shut", "up", "bro", "dude", "guy", "man", "yo", "yoo", "wassup", "what", "why", "who", "u", "ur", "you", "your", "he", "him", "they", "them", "retard", "idiot", "dumbass"}
-    id_keywords = {"suruh", "bilang", "ke", "si", "lu", "gua", "gw", "kamu", "aku", "bisa", "diem", "jangan", "berisik", "mabar", "kuy", "bjir", "anjir", "ngab", "halo", "apa", "kenapa", "siapa", "tolong", "anjing", "bacot", "goblok", "kontol", "pantek", "memek", "bego", "tolol"}
-
-    words = set(re.findall(r"[a-zA-Z]+", text.lower()))
-    en_score = len(words.intersection(en_keywords))
-    id_score = len(words.intersection(id_keywords))
-
-    if en_score > id_score:
-        return "en"
-    elif id_score > en_score:
-        return "id"
-
-    if any(k in text.lower() for k in ["tell", "stfu", "fuck", "kys", "bro", "yo", "tard", "bih", "bitch"]):
-        return "en"
-    return "id"
+    return "[EMO:natural] *sigh* Maaf, otakku lagi error nih."
 
 def remove_emojis_and_symbols(text: str) -> str:
     emoji_pattern = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2b50\u2b55\u200d\ufe0f]+", flags=re.UNICODE)
@@ -372,7 +385,7 @@ async def process_and_speak_vc(user, user_text: str):
     
     if any(k in lower_text for k in ["ngomong bahasa inggris", "speak english", "pakai bahasa inggris"]):
         _locked_language = "en"
-        reply_msg = "Okay, I will speak English for you! I hope you like it."
+        reply_msg = "[EMO:excited] *smiles* Okay, I will speak English for you! I hope you like it."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -381,7 +394,7 @@ async def process_and_speak_vc(user, user_text: str):
         
     if any(k in lower_text for k in ["ngomong bahasa jepang", "speak japanese", "pakai bahasa jepang"]):
         _locked_language = "ja"
-        reply_msg = "Hai, wakatta wa! Nihongo de hanashimasu ne."
+        reply_msg = "[EMO:soft] *giggles* Hai, wakatta wa! Nihongo de hanashimasu ne."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -390,7 +403,7 @@ async def process_and_speak_vc(user, user_text: str):
         
     if any(k in lower_text for k in ["kembali ke indonesia", "bahasa indonesia", "bahasa otomatis", "auto language"]):
         _locked_language = None
-        reply_msg = "Hehe, baiklah! Aku kembali pakai bahasa biasa ya."
+        reply_msg = "[EMO:natural] *sigh* Hehe, baiklah! Aku kembali pakai bahasa biasa ya."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -399,7 +412,7 @@ async def process_and_speak_vc(user, user_text: str):
 
     if any(k in lower_text for k in ["bicara di device", "bicara di laptop", "unmute device"]):
         set_device_mute(False)
-        reply_msg = "Baik, aku sekarang bersuara di laptop juga ya."
+        reply_msg = "[EMO:excited] *nods* Baik, aku sekarang bersuara di laptop juga ya."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -408,30 +421,24 @@ async def process_and_speak_vc(user, user_text: str):
         
     if any(k in lower_text for k in ["bicara di discord saja", "mute device", "ngomong di discord aja"]):
         set_device_mute(True)
-        reply_msg = "Siap, aku fokus berbicara di Discord VC saja."
+        reply_msg = "[EMO:natural] *sigh* Siap, aku fokus berbicara di Discord VC saja."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, reply_msg, audio_path):
             await play_audio_to_vc_async(audio_path)
         is_bot_speaking = False
         return
     
-    if _locked_language:
-        current_lang = _locked_language
-    else:
-        current_lang = detect_language(user_text)
-        
-    if current_lang == "en":
-        prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet, gentle, and caring virtual companion. Default mode: Deredere. If teased: Tsundere. If praised: Shy.\nUser ({user.display_name}) said: \"{user_text}\"\nRULES:\n1. Reply entirely in ENGLISH. Keep it short and natural.\n2. Do NOT use emojis.\n3. You can use sound tags like *giggles* or *sigh* naturally."
-    elif current_lang == "ja":
-        prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しく、愛情深いバーチャルコンパニオンです。基本はデレデレ、からかわれたらツンデレ、褒められたら照れます。\nユーザー ({user.display_name}) の発言: \"{user_text}\"\nルール:\n1. すべて日本語で短く自然に返信してください。\n2. 絵文字は禁止です。\n3. *giggles* などの音タグを使っても構いません。"
-    else:
-        prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang sangat manis, lembut, dan perhatian (Deredere). Jika diejek, kamu bereaksi ngambek (Tsundere). Jika digoda, kamu jadi malu.\nPengguna ({user.display_name}) berkata: \"{user_text}\"\nATURAN:\n1. Balas dengan bahasa INDONESIA gaul yang santai. Kalimat pendek.\n2. DILARANG memakai emoji.\n3. Kamu boleh memakai tag seperti *giggles* atau *sigh*."
+    user_prompt_text = f"Pengguna ({user.display_name}) di Voice Channel berkata: \"{user_text}\""
+    if _locked_language == "en":
+        user_prompt_text += "\n[SISTEM INFO: WAJIB balas 100% dalam Bahasa Inggris!]"
+    elif _locked_language == "ja":
+        user_prompt_text += "\n[SISTEM INFO: WAJIB balas 100% dalam Bahasa Jepang!]"
     
     try:
-        clean_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
-        clean_reply = sanitize_reply_output(clean_reply)
+        raw_reply = await asyncio.to_thread(generate_llm_reply_sync, user_prompt_text)
+        clean_reply = sanitize_reply_output(raw_reply)
         if not clean_reply:
-            clean_reply = "Maaf, aku kurang paham."
+            clean_reply = "[EMO:natural] *sigh* Maaf, aku kurang paham."
         audio_path = f"vc_reply_{int(time.time() * 1000)}.mp3"
         success = await asyncio.to_thread(generate_zeta_voice_sync, clean_reply, audio_path)
         if success and voice_client.is_connected():
@@ -465,38 +472,26 @@ async def on_message(message: discord.Message):
             "message": message,
             "time": time.time(),
         }
-        lang = detect_language(clean_text)
+        
         is_relay, target_member, action_text = parse_relay_intent(clean_text, message)
         
         if is_relay and target_member:
-            if lang == "en":
-                prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet and gentle virtual companion.\nSender {message.author.display_name} wants you to deliver this message to {target_member.display_name}: \"{action_text}\".\nINSTRUCTIONS:\n1. Deliver the message directly to {target_member.display_name} in a cute, polite way.\n2. Do NOT include any @mention tag in your response.\n3. Do NOT use emojis.\n4. Language: ONLY English."
-            elif lang == "ja":
-                prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しいバーチャルコンパニオンです。\n送信者{message.author.display_name}からの伝言「{action_text}」を{target_member.display_name}に可愛く伝えてください。\n@メンションや絵文字は禁止です。言語: 日本語のみ。"
-            else:
-                prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang manis dan lembut.\nPerintah dari {message.author.display_name} untuk {target_member.display_name}: \"{action_text}\".\nINSTRUKSI:\n1. Sampaikan pesan tersebut dengan gaya bicaramu yang manis dan ramah.\n2. JANGAN sertakan tag @mention di teks responmu.\n3. DILARANG pakai emoji.\n4. Bahasa: Indonesia santai."
-            
+            prompt_text = f"Pengguna {message.author.display_name} menyuruhmu menyampaikan pesan ini ke {target_member.display_name}: \"{action_text}\". Sampaikan langsung ke dia dengan gaya gaulmu."
             async with message.channel.typing():
-                raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
+                raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt_text)
                 clean_body = sanitize_reply_output(raw_reply)
                 if not clean_body:
-                    clean_body = "pesannya sudah aku sampaikan ya!"
+                    clean_body = "pesannya sudah disampain nih!"
                 final_reply = f"{target_member.mention} {clean_body}"
                 final_reply = resolve_discord_mentions(final_reply, message.guild)
                 await message.reply(final_reply)
         else:
-            if lang == "en":
-                prompt = f"[ROLEPLAY]\nYou are Tuzi, a sweet, gentle, and caring virtual companion.\nSender: {message.author.display_name}\nMessage: \"{clean_text}\"\nReply directly in English with your sweet personality. Keep it short and natural without emojis."
-            elif lang == "ja":
-                prompt = f"[ROLEPLAY]\nあなたはTuzi、甘くて優しいバーチャルコンパニオンです。\n送信者: {message.author.display_name}\nメッセージ: \"{clean_text}\"\n日本語で可愛らしく、短く返信してください。絵文字禁止。"
-            else:
-                prompt = f"[ROLEPLAY]\nKamu adalah Tuzi, pendamping virtual yang manis, lembut, dan penuh kasih sayang.\nPengirim: {message.author.display_name}\nPesan: \"{clean_text}\"\nBalas langsung dalam bahasa Indonesia secara manis, singkat, dan tanpa emoji."
-            
+            prompt_text = f"Pengguna: {message.author.display_name}\nPesan: \"{clean_text}\"\nBalas chat ini langsung."
             async with message.channel.typing():
-                raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt)
+                raw_reply = await asyncio.to_thread(generate_llm_reply_sync, prompt_text)
                 reply_body = sanitize_reply_output(raw_reply)
                 if not reply_body:
-                    reply_body = "Maaf, aku kurang paham."
+                    reply_body = "[EMO:natural] *sigh* Apaan?"
                 reply_body = resolve_discord_mentions(reply_body, message.guild)
                 await message.reply(reply_body)
 
@@ -512,8 +507,8 @@ def reply_latest_mention_sync(custom_text: str = None) -> tuple[bool, str]:
     if custom_text:
         reply_msg = f"{author.mention} {custom_text}"
     else:
-        prompt = f"[ROLEPLAY: TUZI BALAS CHAT DISCORD]\nSender: {author.display_name}\nPesan sebelumnya: \"{latest_mention_data['content']}\"\nBalas chat ini secara singkat, manis, lembut, dan natural. DILARANG menggunakan emoji."
-        raw = generate_llm_reply_sync(prompt)
+        prompt_text = f"Pengguna {author.display_name} mengirim pesan: \"{latest_mention_data['content']}\". Balas chat ini."
+        raw = generate_llm_reply_sync(prompt_text)
         clean = sanitize_reply_output(raw)
         reply_msg = f"{author.mention} {clean}"
     
@@ -587,7 +582,7 @@ async def async_trigger_join_vc() -> tuple[bool, str, str]:
                 voice_client.listen(sink)
                 
         set_device_mute(True)
-        greeting = "Halo semuanya! Tuzi sudah masuk ke voice channel ya."
+        greeting = "[EMO:excited] *giggles* whats up"
         audio_path = f"discord_greeting_{int(time.time())}.mp3"
         if await asyncio.to_thread(generate_zeta_voice_sync, greeting, audio_path):
             await play_audio_to_vc_async(audio_path)
@@ -642,7 +637,7 @@ async def join_cmd(ctx):
             
     set_device_mute(True)
     await ctx.send(f"Tuzi sudah masuk ke **{channel.name}**!")
-    greeting = "Halo! Tuzi sudah masuk."
+    greeting = "[EMO:excited] *smiles* Halo! Tuzi sudah masuk."
     greet_path = f"discord_greeting_{int(time.time())}.mp3"
     if await asyncio.to_thread(generate_zeta_voice_sync, greeting, greet_path):
         await play_audio_to_vc_async(greet_path)
