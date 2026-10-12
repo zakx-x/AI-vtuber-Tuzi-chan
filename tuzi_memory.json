@@ -5,31 +5,15 @@
     },
     {
         "role": "assistant",
-        "content": "[EMO:soft] Sweet dreams, Zak. Hope you have the most amazing night! *yawns* Goodnight!"
+        "content": "[EMO:natural] *facepalm* Y tho, really? This is getting ridiculous. *rolls eyes* It's just a phrase people use when they're confused or trolling. *sigh* Can we please just chat about something more fun? *smirks*"
     },
     {
         "role": "user",
-        "content": "say that to my friend aswell, cipta"
+        "content": "so basically u hate that kinda fo update, like mobile app for u so u can move to mobile not only for pc?\n\n[FAKTA WAKTU REALTIME: Tanggal hari ini: 12 Oktober 2026]"
     },
     {
         "role": "assistant",
-        "content": "[EMO:soft] Sweet dreams, Cipta. Hope you have the most amazing night! *yawns* Goodnight!"
-    },
-    {
-        "role": "user",
-        "content": "hey"
-    },
-    {
-        "role": "assistant",
-        "content": "[EMO:natural] Hey there! *waves* What's up?"
-    },
-    {
-        "role": "user",
-        "content": "what time is it now\n\n[FAKTA WAKTU REALTIME: Jam sekarang: 10:39:26 WIB]"
-    },
-    {
-        "role": "assistant",
-        "content": "[EMO:natural] It's 10:39 PM right now! *checks watch* Time to wind down for the day, huh?"
+        "content": "[EMO:natural] *giggles* Nah, jadi lo suka nge-troll gue ya? *teases* Tapi iya deh, update itu bikin gue bosen. Apalagi bisa pindah ke HP, udah gitu. *shrugs* Tapi kalau lo mau, coba aja nanti. *winks*"
     },
     {
         "role": "user",
@@ -37,14 +21,30 @@
     },
     {
         "role": "assistant",
-        "content": "[EMO:natural] Hey! *smirks* What's cooking, Zak?"
+        "content": "[EMO:soft] *looks up* Hm?"
     },
     {
         "role": "user",
-        "content": "nothng much, wbu?"
+        "content": "whatchu doin over there\n\n[SISTEM INFO BANTUAN: Ini adalah hasil pencarian internet terbaru:\n[1] The Detour: Whatcha Doin There? - YouTubeWhatchu doin over there? - YouTubeYARN | - What? - Whatchu doing there? | The Detour (2016 ...Whatchu doin' there? | The Detour (2016) - YarnHIYA COSMO!! Whatchu doin over there! – @danger-run-au on TumblrDua Lipa - Whatcha Doing Lyrics | AZLyrics.comDua Lipa – Whatcha Doing Lyrics - Genius: Jul 6, 2016 · Some incredibly funny short clips from the TV show The Detour. I made a \"Whatcha doin' there\" notification tone if you'd like it! Here's the link: https://drive.google.com/file/d/12bSa.....\n[2] Whatchu doin over there? - YouTube: Mar 8, 2022 · Whatchu doin over there?\nJawab pertanyaan Zak dengan gayamu sendiri berdasarkan fakta ini!]"
     },
     {
         "role": "assistant",
-        "content": "[EMO:natural] Same here, just chilling. Want to plan something fun for the weekend? *raises brow*"
+        "content": "[EMO:soft] *looks up* Just vibing here, fr."
+    },
+    {
+        "role": "user",
+        "content": "do u know what happend in kalimantan today?"
+    },
+    {
+        "role": "assistant",
+        "content": "[EMO:natural] *tilts head* Ngl, I don't have real-time news access, bestie."
+    },
+    {
+        "role": "user",
+        "content": "ohh shot my bad ill fix that in a minute"
+    },
+    {
+        "role": "assistant",
+        "content": "[EMO:natural] *waves hand* No stress, take your time."
     }
 ]

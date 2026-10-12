@@ -14,6 +14,7 @@ import queue
 import tempfile
 import random
 import base64
+from groq import Groq
 import websockets
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -47,8 +48,9 @@ from stt_engine import STTEngine
 
 from openai import OpenAI
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PORT = getattr(config, "HTTP_PORT", 8000)
+PORT = getattr(config, "HTTP_PORT", 8080)
 MEMORY_FILE = os.path.join(BASE_DIR, "tuzi_memory.json")
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -60,16 +62,28 @@ hp_mode = "text"
 ws_clients = set()
 ws_loop = None
 
-if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
-    print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
+#if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
+    #print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
+    #sys.exit(1)
+
+#llm_client = OpenAI(
+#    base_url="https://openrouter.ai/api/v1",
+#    api_key=config.OPENROUTER_API_KEY,
+#)
+
+#ACTIVE_MODEL = "qwen/qwen-2.5-7b-instruct"
+
+if not getattr(config, "GROQ_API_KEY", "") or config.GROQ_API_KEY == "MASUKKAN_GROQ_API_KEY_ANDA_DISINI":
+    print("[ERROR] GROQ_API_KEY belum disetel di config.py!")
     sys.exit(1)
 
-llm_client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=config.OPENROUTER_API_KEY,
+# Inisialisasi Groq Client
+llm_client = Groq(
+    api_key=config.GROQ_API_KEY,
 )
 
-ACTIVE_MODEL = "qwen/qwen-2.5-7b-instruct"
+# Ganti ACTIVE_MODEL dengan model yang disedikan Groq
+ACTIVE_MODEL = "qwen/qwen3.8-27b"
 
 class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -702,7 +716,7 @@ def chat_processor_loop(bridge, tts_engine):
             
             if tuzi_location == "HP" and len(display_dialogue) > 1:
                 broadcast_to_hp({
-                    "type": "text",
+                    "type": "BOT_REPLY",
                     "text": display_dialogue
                 })
             
