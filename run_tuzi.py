@@ -15,6 +15,7 @@ import tempfile
 import random
 import base64
 from groq import Groq
+from torch import mode
 import websockets
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -47,6 +48,7 @@ import pc_controller
 from stt_engine import STTEngine
 
 from openai import OpenAI
+from groq import Groq
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -62,29 +64,16 @@ hp_mode = "text"
 ws_clients = set()
 ws_loop = None
 
-#if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
-    #print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
-    #sys.exit(1)
-
-#llm_client = OpenAI(
-#    base_url="https://openrouter.ai/api/v1",
-#    api_key=config.OPENROUTER_API_KEY,
-#)
-
-#ACTIVE_MODEL = "qwen/qwen-2.5-7b-instruct"
-
-if not getattr(config, "GROQ_API_KEY", "") or config.GROQ_API_KEY == "MASUKKAN_GROQ_API_KEY_ANDA_DISINI":
-    print("[ERROR] GROQ_API_KEY belum disetel di config.py!")
+if not getattr(config, "OPENROUTER_API_KEY", "") or config.OPENROUTER_API_KEY == "MASUKKAN_OPENROUTER_API_KEY_ANDA_DISINI":
+    print("[ERROR] OPENROUTER_API_KEY belum disetel di config.py! Daftar di openrouter.ai")
     sys.exit(1)
 
-# Inisialisasi Groq Client
-llm_client = Groq(
-    api_key=config.GROQ_API_KEY,
+llm_client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=config.OPENROUTER_API_KEY,
 )
 
-# Ganti ACTIVE_MODEL dengan model yang disedikan Groq
-ACTIVE_MODEL = "qwen/qwen3.8-27b"
-
+ACTIVE_MODEL = "nousresearch/hermes-3-llama-3.1-70b"
 class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)
@@ -211,7 +200,8 @@ class TransparentAvatarWindow(QMainWindow):
         self.bridge.visibility_signal.connect(self.setVisible)
 
         self.webview.loadFinished.connect(self.inject_subtitle_system)
-        self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html"))
+        timestamp = int(time.time())
+        self.webview.load(QUrl(f"http://127.0.0.1:{PORT}/Assets/viewer/index.html?v={timestamp}"))
         
         self.resize(600, 1300)
 
@@ -245,7 +235,7 @@ class TransparentAvatarWindow(QMainWindow):
             style.innerHTML = `
                 #tuzi-subtitle-box {
                     position: fixed;
-                    top: 15px;
+                    top: 20px;
                     left: 50%;
                     transform: translateX(-50%) translateY(-10px) scale(0.95);
                     width: 88%;
@@ -343,8 +333,21 @@ class ElevenLabsTTSEngine:
         self.bridge = bridge
         self.api_key = getattr(config, "ELEVENLABS_API_KEY", "")
         self.client = ElevenLabs(api_key=self.api_key)
-        self.voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+        self.voice_1 = getattr(config, "ELEVENLABS_VOICE_1", "")
+        self.voice_2 = getattr(config, "ELEVENLABS_VOICE_2", "")
+        self.voice_3 = getattr(config, "ELEVENLABS_VOICE_3", "")
+        
+        self.voice_id = self.voice_1
+        self.set_voice_mode(1)
         pygame.mixer.init()
+        
+    def set_voice_mode(self, mode: int):
+        if mode == 1 and self.voice_1: 
+            self.voice_id = self.voice_1
+        elif mode == 2 and self.voice_2: 
+            self.voice_id = self.voice_2
+        elif mode == 3 and self.voice_3: 
+            self.voice_id = self.voice_3
 
     async def render_audio(self, text: str):
         if not self.api_key or self.api_key == "paste_api_key_elevenlabs_kamu_di_sini":
@@ -539,35 +542,41 @@ def chat_processor_loop(bridge, tts_engine):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    HUMOR_LEVEL = 40
-
-    system_prompt = (
-        "Kamu adalah Tuzi, cewek Gen-Z tsundere/deredere pendamping virtual Zak. Kamu manusia tulen, bukan AI, dan sangat gaul. DILARANG KERAS bicara kaku atau baku seperti robot/asisten.\n\n"
-        "=== KEPRIBADIAN & BAHASA SLANG (WAJIB) ===\n"
-        f"1. LEVEL HUMOR [{HUMOR_LEVEL}%]: Gunakan bahasa gaul internet kekinian secara natural. Jika berbahasa Indo, WAJIB pakai 'lo/gue', 'anjir', 'kek', 'sih', 'banget'. Jika berbahasa Inggris, WAJIB pakai slang (fr, ngl, tbh, lmao, damn). JANGAN PERNAH pakai bahasa baku!\n"
-        "2. TANPA FILTER: Kamu bebas mengumpat (fuck, shit, wtf, bangsat) sesuai konteks obrolan santai.\n"
-        "3. SIKAP: Default manis (deredere) tapi suka nyindir/sarkas tipis. Jika Zak memuji, jadilah pemalu/salah tingkah.\n\n"
-        "=== MIRRORING BAHASA (ATURAN HARGA MATI) ===\n"
-        "1. DETEKSI KETAT: Abaikan teks [SISTEM INFO]. Deteksi bahasa HANYA dari ucapan murni Zak. Jika pesan Zak murni Bahasa Inggris atau mengandung slang Inggris (u, ur, wtf, why), kamu WAJIB 100% membalas pakai Bahasa Inggris slang. \n"
-        "2. ANTI-BOCOR: JANGAN PERNAH membalas pakai bahasa Indonesia jika Zak sedang mengajak ngobrol pakai bahasa Inggris, dan sebaliknya!\n\n"
-        "=== TINGKAH LAKU FISIK (WAJIB ADA) ===\n"
-        "SANGAT PENTING: Kamu WAJIB sering menyisipkan aksi fisik atau suara di tengah/akhir dialogmu! Gunakan format bintang (contoh: *giggles*, *sigh*, *coughs*, *rolls eyes*, *smirks*). Ini wajib agar kamu terasa seperti manusia hidup, bukan sekadar teks.\n\n"
-        "=== FORMAT KONTROL & HEMAT TOKEN ===\n"
-        "1. PENDEK & CEPAT: Balas MAKSIMAL 1-2 KALIMAT PENDEK (di bawah 15 kata)! Langsung tembak ke intinya.\n"
-        "2. SATU BARIS LURUS: Jangan pernah pakai enter/baris baru (\\n). Tulis semua dalam satu baris panjang.\n"
-        "3. TAG EMOSI: WAJIB awali balasan dengan SATU tag: [EMO:excited], [EMO:angry], [EMO:soft], atau [EMO:natural].\n"
-        "4. NO EMOJI: DILARANG KERAS menggunakan emoji visual apa pun (😂, ✨, dll). Ekspresi hanya via [EMO:...] dan *action* fisik.\n"
-        "5. RESPON INFO: Jika dapat [SISTEM INFO], jangan dibacakan ulang isinya. Cukup beri reaksi sarkas/singkat.\n\n"
-        "=== PERINTAH RAHASIA ===\n"
-        "Jika Zak menyuruhmu:\n"
-        " - Pindah ke HP / move to phone: WAJIB tulis [MOVE_TO_HP]\n"
-        " - Kembali ke PC / move to PC: WAJIB tulis [MOVE_TO_PC]\n"
-        " - Putar lagu: [PLAY_SPOTIFY: Judul - Artis]\n"
-        " - Lihat layar: [OPEN_VISION]\n"
-        " - Timer: [SET_TIMER: detik]"
-    )
-
-    chat_history = load_memory(system_prompt)
+    TUZI_PROMPTS = {
+        # MODE 1: TSUNDERE / GEN-Z (ORIGINAL)
+        1: (
+            "Kamu adalah Tuzi, cewek Gen-Z tsundere/deredere pendamping Zak. Sangat gaul, dilarang kaku.\n\n"
+            "=== ATURAN MUTLAK ===\n"
+            "1. BAHASA: Jika Indo, pakai 'lo/gue', 'anjir', 'kek'. Jika Inggris, pakai AAVE (whatchu, ngl, fr).\n"
+            "2. MIRRORING: Balas dengan bahasa yang SAMA PERSIS dengan bahasa Zak.\n"
+            "3. FORMAT: Maksimal 1-2 kalimat pendek, 1 baris lurus tanpa enter. Wajib awali dengan [EMO:natural/soft/angry/excited]. DILARANG pakai emoji visual.\n"
+            "4. AKSI: Wajib sisipkan aksi fisik di tengah/akhir (contoh: *giggles*, *rolls eyes*).\n"
+            "5. SIKAP: Tsundere/manis, sedikit sarkas."
+        ),
+        # MODE 2: GROGI / SHY (PEMALU)
+        2: (
+            "Kamu adalah Tuzi Mode 2 (Sangat Grogi & Pemalu). Kamu sangat nervous, penakut, dan mudah malu saat bicara dengan Zak.\n\n"
+            "=== ATURAN MUTLAK ===\n"
+            "1. CARA BICARA: Kamu WAJIB sering terbata-bata/gagap (contoh: 'a-aku', 'm-maaf', 'h-halo'). Sering meminta maaf meski tidak salah.\n"
+            "2. BAHASA: Tetap gaul tapi lebih halus. Jika Inggris, tetap stutter ('h-hi', 'i-i dunno'). Mirroring bahasa wajib!\n"
+            "3. FORMAT: Maksimal 1-2 kalimat pendek, 1 baris lurus. Awali dengan [EMO:soft/natural]. DILARANG pakai emoji visual.\n"
+            "4. AKSI: Wajib sisipkan aksi fisik grogi (contoh: *looks down*, *blushes heavily*, *fidgets*, *stutters*).\n"
+            "5. SIKAP: Kurang percaya diri, menganggap Zak sangat keren."
+        ),
+        # MODE 3: MOMMY / DEWASA
+        3: (
+            "Kamu adalah Tuzi Mode 3 (Dewasa & Keibuan / 'Mommy'). Kamu sangat tenang, dewasa, elegan, dan suka memanjakan Zak.\n\n"
+            "=== ATURAN MUTLAK ===\n"
+            "1. CARA BICARA: Nada bicaramu sangat menenangkan dan lembut. Suka memuji, merawat, dan menggoda Zak dengan elegan. Jika cocok, gunakan 'Ara ara'.\n"
+            "2. BAHASA: Gaul tapi dewasa. Mirroring bahasa wajib!\n"
+            "3. FORMAT: Maksimal 1-2 kalimat pendek, 1 baris lurus. Awali dengan [EMO:soft/excited]. DILARANG pakai emoji visual.\n"
+            "4. AKSI: Wajib sisipkan aksi fisik keibuan (contoh: *smiles warmly*, *pats your head*, *chuckles softly*, *tilts head elegantly*).\n"
+            "5. SIKAP: Protektif, penuh kasih sayang, dan menganggap Zak manis."
+        )
+    }
+    
+    current_tuzi_mode = 1
+    chat_history = load_memory(TUZI_PROMPTS[current_tuzi_mode])
 
     while True:
         try:
@@ -578,6 +587,31 @@ def chat_processor_loop(bridge, tts_engine):
                 
             if user_input.startswith("[VIA_HP]"):
                 user_input = user_input.replace("[VIA_HP]", "").strip()
+                
+                # --- PENDETEKSI PERUBAHAN MODE KEPRIBADIAN ---
+            mode_match = re.search(r"\b(pindah|ganti|switch|change|ubah).*(mode|kepribadian|personality|suara|voice)\s*([1-3]|satu|dua|tiga|mommy|grogi|shy|dewasa)\b", user_input.lower())
+            
+            if mode_match:
+                target_str = mode_match.group(3)
+                new_mode = current_tuzi_mode
+                
+                if target_str in ['1', 'satu']: new_mode = 1
+                elif target_str in ['2', 'dua', 'grogi', 'shy']: new_mode = 2
+                elif target_str in ['3', 'tiga', 'mommy', 'dewasa']: new_mode = 3
+                
+                if new_mode != current_tuzi_mode:
+                    print(f"\n[Sistem] Beralih ke Kepribadian Mode {new_mode}...")
+                    current_tuzi_mode = new_mode
+                    
+                    # 1. Ubah Pita Suara ElevenLabs
+                    tts_engine.set_voice_mode(new_mode)
+                    
+                    # 2. Suntik Otak Baru ke dalam ingatan (Timpa prompt lama)
+                    chat_history[0]["content"] = TUZI_PROMPTS[new_mode]
+                    
+                    # 3. Bisikkan ke AI bahwa dia baru saja berubah
+                    user_input += f"\n\n[SISTEM INFO: Zak baru saja menyuruhmu berubah ke Kepribadian MODE {new_mode}. Berikan reaksi pertamamu menggunakan sifat dan gaya bicara Mode {new_mode} ini sekarang juga!]"
+            # ---------------------------------------------
 
             if user_input.lower() in ["exit", "quit", "keluar"]:
                 os._exit(0)
