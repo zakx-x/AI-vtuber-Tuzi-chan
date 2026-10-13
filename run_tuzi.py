@@ -582,6 +582,21 @@ def chat_processor_loop(bridge, tts_engine):
         try:
             user_input = input_queue.get()
             
+            is_discord_vc = False
+            is_discord_text = False
+            discord_channel_id = None
+            
+            if user_input.startswith("[DISCORD_VC]"):
+                is_discord_vc = True
+                user_input = user_input.replace("[DISCORD_VC]", "").strip()
+                
+            elif user_input.startswith("[DISCORD_TEXT:"):
+                is_discord_text = True
+                match = re.match(r"\[DISCORD_TEXT:(\d+)\]\s*(.*)", user_input)
+                if match:
+                    discord_channel_id = int(match.group(1))
+                    user_input = match.group(2).strip()
+            
             if tuzi_location == "HP" and not user_input.startswith("[VIA_HP]") and "kembali" not in user_input.lower():
                 continue
                 
@@ -761,6 +776,11 @@ def chat_processor_loop(bridge, tts_engine):
                 threading.Thread(target=pc_func, daemon=True).start()
 
             if len(display_dialogue) > 1:
+                
+                if is_discord_text and discord_channel_id:
+                    discord_voice_bot.send_reply_to_channel_sync(discord_channel_id, display_dialogue)
+                    continue
+                
                 if tuzi_location == "PC":
                     bridge.subtitle_signal.emit(display_dialogue)
 
@@ -769,11 +789,14 @@ def chat_processor_loop(bridge, tts_engine):
                 if is_voice_needed:
                     if not discord_voice_bot.is_device_muted():
                         with speech_lock:
+                            audio_path = loop.run_until_complete(tts_engine.render_audio(spoken_dialogue))
+                            if audio_path:
+                                discord_voice_bot.play_audio_file_to_vc_sync(audio_path)
+                    else:
+                        with speech_lock:
                             loop.run_until_complete(
                                 tts_engine.speak_with_lipsync(spoken_dialogue, emotion=emotion)
                             )
-                    else:
-                        discord_voice_bot.play_text_to_vc_sync(spoken_dialogue)
                 else:
                     print("[Sistem] ElevenLabs di-bypass. Tuzi hanya mengirim teks ke HP.")
 
@@ -787,6 +810,7 @@ def chat_processor_loop(bridge, tts_engine):
             time.sleep(2)
 
 if __name__ == "__main__":
+    discord_voice_bot.main_input_queue = input_queue
     server_thread = threading.Thread(target=start_local_server, daemon=True)
     server_thread.start()
 
