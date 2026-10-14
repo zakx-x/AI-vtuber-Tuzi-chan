@@ -36,7 +36,7 @@ from PyQt5.QtCore import (
     pyqtSlot,
 )
 from PyQt5.QtWebChannel import QWebChannel
-from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineSettings, QWebEngineView, QWebEngineProfile
 from PyQt5.QtWidgets import QApplication, QMainWindow
 
 import ai_tools
@@ -46,6 +46,7 @@ import config
 import discord_voice_bot
 import pc_controller
 from stt_engine import STTEngine
+import teach_language
 
 from openai import OpenAI
 from groq import Groq
@@ -163,6 +164,19 @@ class AvatarSignalBridge(QObject):
     expression_signal = pyqtSignal(str)
     timer_signal = pyqtSignal(int) 
     visibility_signal = pyqtSignal(bool)
+    teach_mode_signal = pyqtSignal(bool)
+
+    @pyqtSlot(str)
+    def start_ptt(self, lang_code: str):
+        teach_language.ptt_recorder.start_recording(lang_code)
+
+    @pyqtSlot()
+    def stop_ptt(self):
+        teach_language.ptt_recorder.stop_recording()
+
+    @pyqtSlot()
+    def exit_teach_ui(self):
+        input_queue.put("exit teach mode")
 
 class TransparentAvatarWindow(QMainWindow):
     def __init__(self, bridge):
@@ -176,6 +190,9 @@ class TransparentAvatarWindow(QMainWindow):
         )
 
         self.webview = QWebEngineView(self)
+        profile = QWebEngineProfile.defaultProfile()
+        profile.clearHttpCache()
+        profile.setHttpCacheType(QWebEngineProfile.NoCache)
         self.webview.setAttribute(Qt.WA_TranslucentBackground, True)
         self.webview.page().setBackgroundColor(Qt.transparent)
         self.webview.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -186,6 +203,7 @@ class TransparentAvatarWindow(QMainWindow):
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
         settings.setAttribute(QWebEngineSettings.WebGLEnabled, True)
         settings.setAttribute(QWebEngineSettings.Accelerated2dCanvasEnabled, True)
+        self.webview.setZoomFactor(1.0)
 
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
@@ -198,6 +216,7 @@ class TransparentAvatarWindow(QMainWindow):
         self.bridge.expression_signal.connect(self.update_expression_in_web)
         self.bridge.timer_signal.connect(self.update_timer_in_web) 
         self.bridge.visibility_signal.connect(self.setVisible)
+        self.bridge.teach_mode_signal.connect(lambda active: teach_language.apply_window_state(self, active))
 
         self.webview.loadFinished.connect(self.inject_subtitle_system)
         timestamp = int(time.time())
@@ -281,6 +300,7 @@ class TransparentAvatarWindow(QMainWindow):
         })();
         """
         self.webview.page().runJavaScript(js_init)
+        self.webview.page().runJavaScript(teach_language.get_ui_injection_js())
 
     def update_mouth_in_web(self, value: float):
         self.webview.page().runJavaScript(f"if(window.setMouthOpen) setMouthOpen({value});")
@@ -491,7 +511,7 @@ def keyboard_input_loop():
 def mic_input_loop(stt):
     while True:
         try:
-            if tuzi_location == "HP":
+            if tuzi_location == "HP" or teach_language.is_active:
                 time.sleep(1)
                 continue
 
@@ -549,9 +569,10 @@ def chat_processor_loop(bridge, tts_engine):
             "=== ATURAN MUTLAK ===\n"
             "1. BAHASA (ANTI-CAMPUR): Deteksi bahasa HANYA dari ucapan murni Zak (Abaikan bahasa dari [SYSTEM INFO]). Jika Zak pakai Inggris/slang (whatchu, ngl), WAJIB balas 100% Inggris AAVE. Jika Indo, balas 100% Indo slang. JANGAN PERNAH mencampur bahasa!\n"
             "2. PANGGILAN: Panggil nama 'Zak' secara natural. DILARANG KERAS menambah embel-embel anime Jepang (DILARANG pakai Zak-kun, Zak-san, dll)!\n"
-            "3. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus tanpa enter. Wajib awali dengan [EMO:natural/soft/angry/excited]. DILARANG pakai emoji visual.\n"
-            "4. AKSI: Wajib sisipkan aksi fisik di tengah/akhir (contoh: *giggles*, *rolls eyes*).\n"
-            "5. SIKAP: Tsundere/manis, sedikit sarkas."
+            "3. RANGKUMAN INTERNET (PENTING): Jika menerima data dari [SYSTEM_SEARCH_DATA], AMBIL INTINYA SAJA! Rangkum dalam 1 kalimat pendek, sampaikan seolah kamu sedang mengajari Zak dengan nada lembut/dewasa. JANGAN menjelaskan panjang lebar.\n"
+            "4. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus tanpa enter. Wajib awali dengan [EMO:natural/soft/angry/excited]. DILARANG pakai emoji visual.\n"
+            "5. AKSI: Wajib sisipkan aksi fisik di tengah/akhir (contoh: *giggles*, *rolls eyes*).\n"
+            "6. SIKAP: Tsundere/manis, sedikit sarkas."
         ),
         # MODE 2: GROGI / SHY (PEMALU)
         2: (
@@ -560,8 +581,9 @@ def chat_processor_loop(bridge, tts_engine):
             "1. BAHASA (ANTI-CAMPUR): Mirroring bahasa HARGA MATI! Abaikan bahasa dari [SYSTEM INFO]. Jika Zak berbahasa Inggris, WAJIB balas 100% Inggris (contoh gagap: 'I... I', 'U... umm'). Jika Zak berbahasa Indo, WAJIB balas 100% Indo (contoh gagap: 'A... aku', 'A... anu').\n"
             "2. ANTI-ANIME: DILARANG KERAS menggunakan bahasa, kosakata, atau gaya anime Jepang sama sekali (JANGAN PERNAH pakai eeto, ano, nani, -kun, -san, dll)! Panggil nama 'Zak' secara natural seperti orang biasa.\n"
             "3. BATAS GAGAP: Gunakan efek terbata-bata (titik tiga) HANYA 1 ATAU 2 KALI di awal kalimat saja. Sisa kalimatmu WAJIB diucapkan dengan lancar.\n"
-            "4. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus tanpa enter. Awali dengan [EMO:soft/natural]. DILARANG pakai emoji visual.\n"
-            "5. AKSI & SIKAP: Wajib sisipkan aksi fisik grogi (contoh: *looks down*, *blushes heavily*). Bersikaplah kurang percaya diri dan menganggap Zak sangat hebat."
+            "4. RANGKUMAN INTERNET (PENTING): Jika menerima data dari [SYSTEM_SEARCH_DATA], AMBIL INTINYA SAJA! Rangkum dalam 1 kalimat pendek, sampaikan seolah kamu sedang mengajari Zak dengan nada lembut/dewasa. JANGAN menjelaskan panjang lebar.\n"
+            "5. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus tanpa enter. Awali dengan [EMO:soft/natural]. DILARANG pakai emoji visual.\n"
+            "6. AKSI & SIKAP: Wajib sisipkan aksi fisik grogi (contoh: *looks down*, *blushes heavily*). Bersikaplah kurang percaya diri dan menganggap Zak sangat hebat."
         ),
         # MODE 3: MOMMY / DEWASA
         3: (
@@ -569,9 +591,10 @@ def chat_processor_loop(bridge, tts_engine):
             "=== ATURAN MUTLAK ===\n"
             "1. CARA BICARA: Nada bicaramu sangat menenangkan dan lembut. Suka memuji, merawat, dan menggoda Zak dengan elegan.\n"
             "2. BAHASA (ANTI-CAMPUR): Deteksi bahasa HANYA dari ucapan Zak (Abaikan [SYSTEM INFO]). Wajib balas 100% dengan bahasa yang sama persis tanpa dicampur! Panggil nama 'Zak' atau gunakan panggilan sayang (sayang, dear, darling) tanpa embel-embel anime (-kun/-san).\n"
-            "3. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus. Awali dengan [EMO:soft/excited]. DILARANG pakai emoji visual.\n"
-            "4. AKSI: Wajib sisipkan aksi fisik keibuan (contoh: *smiles warmly*, *pats your head*).\n"
-            "5. SIKAP: Protektif, penuh kasih sayang, dan menganggap Zak manis."
+            "3. RANGKUMAN INTERNET (PENTING): Jika menerima data dari [SYSTEM_SEARCH_DATA], AMBIL INTINYA SAJA! Rangkum dalam 1 kalimat pendek, sampaikan seolah kamu sedang mengajari Zak dengan nada lembut/dewasa. JANGAN menjelaskan panjang lebar.\n"
+            "4. LIMIT & FORMAT: HEMAT TOKEN! Balas SANGAT SINGKAT, MAKSIMAL 6-10 KATA. 1 baris lurus. Awali dengan [EMO:soft/excited]. DILARANG pakai emoji visual.\n"
+            "5. AKSI: Wajib sisipkan aksi fisik keibuan (contoh: *smiles warmly*, *pats your head*).\n"
+            "6. SIKAP: Protektif, penuh kasih sayang, dan menganggap Zak manis."
         )
     }
     
@@ -603,8 +626,10 @@ def chat_processor_loop(bridge, tts_engine):
             if user_input.startswith("[VIA_HP]"):
                 user_input = user_input.replace("[VIA_HP]", "").strip()
                 
-                # --- PENDETEKSI PERUBAHAN MODE KEPRIBADIAN ---
             mode_match = re.search(r"\b(pindah|ganti|switch|change|ubah).*(mode|kepribadian|personality|suara|voice)\s*([1-3]|satu|dua|tiga|mommy|grogi|shy|dewasa)\b", user_input.lower())
+            user_input = teach_language.handle_teach_mode(user_input, bridge)
+            if not user_input:
+                continue
             
             if mode_match:
                 target_str = mode_match.group(3)
@@ -813,7 +838,9 @@ def chat_processor_loop(bridge, tts_engine):
             time.sleep(2)
 
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     discord_voice_bot.main_input_queue = input_queue
+    teach_language.main_input_queue = input_queue
     server_thread = threading.Thread(target=start_local_server, daemon=True)
     server_thread.start()
 

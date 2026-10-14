@@ -9,7 +9,7 @@ model_folder = os.path.join(
     "Assets", 
     "model", 
     "tuziv2", 
-    "红白短裙（合并）改色版.8192"
+    "core"
 )
 
 def resize_all_textures(folder_path, max_size=2048):
