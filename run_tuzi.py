@@ -812,7 +812,6 @@ def chat_processor_loop(bridge, tts_engine):
                 is_voice_needed = (tuzi_location == "PC") or (tuzi_location == "HP" and hp_mode == "live") or is_discord_vc
 
                 if is_voice_needed:
-                    # 1. JIKA DIAJAK NGOBROL VIA DISCORD VC (Atau Tuzi sedang masuk mode VC)
                     if is_discord_vc or discord_voice_bot.is_device_muted():
                         with speech_lock:
                             audio_path = loop.run_until_complete(tts_engine.render_audio(spoken_dialogue))
